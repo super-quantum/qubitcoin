@@ -1,5 +1,6 @@
 #include <array>
 #include <crypto/qhash.h>
+#include <cuda_runtime_api.h>
 #include <format>
 #include <numbers>
 #include <numeric>

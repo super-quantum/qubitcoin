@@ -8,6 +8,7 @@
 
 #include <attributes.h>
 #include <crypto/common.h>
+#include <crypto/qhash.h>
 #include <crypto/ripemd160.h>
 #include <crypto/sha256.h>
 #include <prevector.h>
@@ -21,57 +22,67 @@
 typedef uint256 ChainCode;
 
 /** A hasher class for Bitcoin's 256-bit hash (double SHA-256). */
-class CHash256 {
+class CHash256
+{
 private:
     CSHA256 sha;
+
 public:
     static const size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
 
-    void Finalize(Span<unsigned char> output) {
+    void Finalize(Span<unsigned char> output)
+    {
         assert(output.size() == OUTPUT_SIZE);
         unsigned char buf[CSHA256::OUTPUT_SIZE];
         sha.Finalize(buf);
         sha.Reset().Write(buf, CSHA256::OUTPUT_SIZE).Finalize(output.data());
     }
 
-    CHash256& Write(Span<const unsigned char> input) {
+    CHash256& Write(Span<const unsigned char> input)
+    {
         sha.Write(input.data(), input.size());
         return *this;
     }
 
-    CHash256& Reset() {
+    CHash256& Reset()
+    {
         sha.Reset();
         return *this;
     }
 };
 
 /** A hasher class for Bitcoin's 160-bit hash (SHA-256 + RIPEMD-160). */
-class CHash160 {
+class CHash160
+{
 private:
     CSHA256 sha;
+
 public:
     static const size_t OUTPUT_SIZE = CRIPEMD160::OUTPUT_SIZE;
 
-    void Finalize(Span<unsigned char> output) {
+    void Finalize(Span<unsigned char> output)
+    {
         assert(output.size() == OUTPUT_SIZE);
         unsigned char buf[CSHA256::OUTPUT_SIZE];
         sha.Finalize(buf);
         CRIPEMD160().Write(buf, CSHA256::OUTPUT_SIZE).Finalize(output.data());
     }
 
-    CHash160& Write(Span<const unsigned char> input) {
+    CHash160& Write(Span<const unsigned char> input)
+    {
         sha.Write(input.data(), input.size());
         return *this;
     }
 
-    CHash160& Reset() {
+    CHash160& Reset()
+    {
         sha.Reset();
         return *this;
     }
 };
 
 /** Compute the 256-bit hash of an object. */
-template<typename T>
+template <typename T>
 inline uint256 Hash(const T& in1)
 {
     uint256 result;
@@ -80,15 +91,16 @@ inline uint256 Hash(const T& in1)
 }
 
 /** Compute the 256-bit hash of the concatenation of two objects. */
-template<typename T1, typename T2>
-inline uint256 Hash(const T1& in1, const T2& in2) {
+template <typename T1, typename T2>
+inline uint256 Hash(const T1& in1, const T2& in2)
+{
     uint256 result;
     CHash256().Write(MakeUCharSpan(in1)).Write(MakeUCharSpan(in2)).Finalize(result);
     return result;
 }
 
 /** Compute the 160-bit hash an object. */
-template<typename T1>
+template <typename T1>
 inline uint160 Hash160(const T1& in1)
 {
     uint160 result;
@@ -112,7 +124,8 @@ public:
      *
      * Invalidates this object.
      */
-    uint256 GetHash() {
+    uint256 GetHash()
+    {
         uint256 result;
         ctx.Finalize(result.begin());
         ctx.Reset().Write(result.begin(), CSHA256::OUTPUT_SIZE).Finalize(result.begin());
@@ -123,7 +136,8 @@ public:
      *
      * Invalidates this object.
      */
-    uint256 GetSHA256() {
+    uint256 GetSHA256()
+    {
         uint256 result;
         ctx.Finalize(result.begin());
         return result;
@@ -132,13 +146,55 @@ public:
     /**
      * Returns the first 64 bits from the resulting hash.
      */
-    inline uint64_t GetCheapHash() {
+    inline uint64_t GetCheapHash()
+    {
         uint256 result = GetHash();
         return ReadLE64(result.begin());
     }
 
     template <typename T>
     HashWriter& operator<<(const T& obj)
+    {
+        ::Serialize(*this, obj);
+        return *this;
+    }
+};
+
+
+/** A writer stream (for serialization) that computes a 256-bit quantum hash. */
+class QHashWriter
+{
+private:
+    QHash ctx;
+
+public:
+    void write(Span<const std::byte> src)
+    {
+        ctx.Write(UCharCast(src.data()), src.size());
+    }
+
+    /** Compute the QHash of all data written to this object.
+     *
+     * Invalidates this object.
+     */
+    uint256 GetHash()
+    {
+        uint256 result;
+        ctx.Finalize(result.begin());
+        return result;
+    }
+
+    /**
+     * Returns the first 64 bits from the resulting hash.
+     */
+    inline uint64_t GetCheapHash()
+    {
+        uint256 result = GetHash();
+        return ReadLE64(result.begin());
+    }
+
+    template <typename T>
+    QHashWriter& operator<<(const T& obj)
     {
         ::Serialize(*this, obj);
         return *this;
@@ -208,7 +264,7 @@ public:
 
 unsigned int MurmurHash3(unsigned int nHashSeed, Span<const unsigned char> vDataToHash);
 
-void BIP32Hash(const ChainCode &chainCode, unsigned int nChild, unsigned char header, const unsigned char data[32], unsigned char output[64]);
+void BIP32Hash(const ChainCode& chainCode, unsigned int nChild, unsigned char header, const unsigned char data[32], unsigned char output[64]);
 
 /** Return a HashWriter primed for tagged hashes (as specified in BIP 340).
  *

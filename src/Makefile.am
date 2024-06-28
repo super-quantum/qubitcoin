@@ -8,8 +8,12 @@ print-%: FORCE
 
 DIST_SUBDIRS = secp256k1
 
+CUSTATEVEC_LDFLAGS_STATIC = -L$(CUDA_PATH)/lib64 -lcublas_static -L$(CUQUANTUM_ROOT)/lib -lcustatevec_static -lcublasLt_static -lculibos -lcudart_static
+CUSTATEVEC_LDFLAGS = -L$(CUDA_PATH)/lib64 -lcublas -L$(CUQUANTUM_ROOT)/lib -lcustatevec -lcudart
+CUSTATEVEC_CXXFLAGS = -I$(CUDA_PATH)/include -I$(CUQUANTUM_ROOT)/include
+
 AM_LDFLAGS = $(LIBTOOL_LDFLAGS) $(HARDENED_LDFLAGS) $(GPROF_LDFLAGS) $(SANITIZER_LDFLAGS) $(CORE_LDFLAGS)
-AM_CXXFLAGS = $(CORE_CXXFLAGS) $(DEBUG_CXXFLAGS) $(HARDENED_CXXFLAGS) $(WARN_CXXFLAGS) $(NOWARN_CXXFLAGS) $(ERROR_CXXFLAGS) $(GPROF_CXXFLAGS) $(SANITIZER_CXXFLAGS)
+AM_CXXFLAGS = $(CORE_CXXFLAGS) $(DEBUG_CXXFLAGS) $(HARDENED_CXXFLAGS) $(WARN_CXXFLAGS) $(NOWARN_CXXFLAGS) $(ERROR_CXXFLAGS) $(GPROF_CXXFLAGS) $(SANITIZER_CXXFLAGS) $(CUSTATEVEC_CXXFLAGS)
 AM_CPPFLAGS = $(DEBUG_CPPFLAGS) $(HARDENED_CPPFLAGS) $(CORE_CPPFLAGS)
 AM_LIBTOOLFLAGS = --preserve-dup-deps
 PTHREAD_FLAGS = $(PTHREAD_CFLAGS) $(PTHREAD_LIBS)
@@ -554,7 +558,7 @@ crypto_libbitcoin_crypto_base_la_CPPFLAGS = $(AM_CPPFLAGS)
 # version can't be used on windows anyway because the library doesn't currently
 # export DLL symbols.
 crypto_libbitcoin_crypto_base_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS) -static
-crypto_libbitcoin_crypto_base_la_LDFLAGS = $(AM_LDFLAGS) -static
+crypto_libbitcoin_crypto_base_la_LDFLAGS = $(AM_LDFLAGS) -static $(CUSTATEVEC_LDFLAGS)
 
 crypto_libbitcoin_crypto_base_la_SOURCES = \
   crypto/aes.cpp \
@@ -586,7 +590,9 @@ crypto_libbitcoin_crypto_base_la_SOURCES = \
   crypto/sha512.cpp \
   crypto/sha512.h \
   crypto/siphash.cpp \
-  crypto/siphash.h
+  crypto/siphash.h \
+  crypto/qhash.cpp \
+  crypto/qhash.h
 
 # See explanation for -static in crypto_libbitcoin_crypto_base_la's LDFLAGS and
 # CXXFLAGS above
@@ -1015,7 +1021,7 @@ lib_LTLIBRARIES += $(LIBBITCOINCONSENSUS)
 include_HEADERS = script/bitcoinconsensus.h
 libbitcoinconsensus_la_SOURCES = support/cleanse.cpp $(crypto_libbitcoin_crypto_base_la_SOURCES) $(libbitcoin_consensus_a_SOURCES)
 
-libbitcoinconsensus_la_LDFLAGS = $(AM_LDFLAGS) -no-undefined $(RELDFLAGS)
+libbitcoinconsensus_la_LDFLAGS = $(AM_LDFLAGS) -no-undefined $(RELDFLAGS) $(CUSTATEVEC_LDFLAGS)
 libbitcoinconsensus_la_LIBADD = $(LIBSECP256K1)
 libbitcoinconsensus_la_CPPFLAGS = $(AM_CPPFLAGS) -I$(builddir)/obj -I$(srcdir)/secp256k1/include -DBUILD_BITCOIN_INTERNAL -DDISABLE_OPTIMIZED_SHA256
 libbitcoinconsensus_la_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
