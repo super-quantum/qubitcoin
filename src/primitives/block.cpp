@@ -10,11 +10,6 @@
 
 uint256 CBlockHeader::GetHash() const
 {
-    return (HashWriter{} << *this).GetHash();
-}
-
-uint256 CBlockHeader::GetPoWHash() const
-{
     return (QHashWriter{} << *this).GetHash();
 }
 
