@@ -13,8 +13,8 @@ private:
     CSHA256 ctx;
     custatevecHandle_t handle; // TODO: should probably be a singleton
 
-    static const size_t nQubits = 4;
-    static const size_t nLayers = 4; // TODO
+    static const size_t nQubits = 16;
+    static const size_t nLayers = 2; // TODO
 
     using fixedFloat = fpm::fixed<int16_t, int32_t, 15>;
 

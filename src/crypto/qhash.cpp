@@ -152,9 +152,11 @@ void QHash::Finalize(unsigned char hash[OUTPUT_SIZE])
     // TODO: May be faster with a single array write
     for (auto exp : exps) {
         auto fixedExp{fixedFloat{exp}.raw_value()};
+        unsigned char byte;
         for (size_t i{0}; i < sizeof(fixedExp); ++i) {
             // Little endian representation
-            hasher.Write(reinterpret_cast<const unsigned char*>(&fixedExp), 1);
+            byte = static_cast<unsigned char>(fixedExp);
+            hasher.Write(&byte, 1);
             fixedExp >>= std::numeric_limits<unsigned char>::digits;
         }
     }
