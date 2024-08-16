@@ -24,31 +24,41 @@
         }                                                                             \
     };
 
-std::array<double, QHash::nQubits> QHash::runSimulation(const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data)
+static const cuDoubleComplex matrixX[] = {
+    {0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}};
+
+QHash::QHash() : ctx(), handle(), dStateVec(), extraSize(0), extra(nullptr)
 {
+    custatevecCreate(&handle);
+
     // TODO: May overflow on 32-bit systems
     const std::size_t stateVecSizeBytes = (1 << nQubits) * sizeof(cuDoubleComplex);
 
-    // TODO: May be better to allocate it on class initialization
-    cuDoubleComplex* dStateVec;
     HANDLE_CUDA_ERROR(cudaMalloc(reinterpret_cast<void**>(&dStateVec), stateVecSizeBytes));
     HANDLE_CUSTATEVEC_ERROR(custatevecInitializeStateVector(handle, dStateVec, CUDA_C_64F,
                                                             nQubits,
                                                             CUSTATEVEC_STATE_VECTOR_TYPE_ZERO));
 
-    runCircuit(dStateVec, data);
+    HANDLE_CUSTATEVEC_ERROR(custatevecApplyMatrixGetWorkspaceSize(handle, CUDA_C_64F, nQubits,
+                                                                  matrixX, CUDA_C_64F,
+                                                                  CUSTATEVEC_MATRIX_LAYOUT_ROW,
+                                                                  0, 1, 1,
+                                                                  CUSTATEVEC_COMPUTE_DEFAULT,
+                                                                  &extraSize));
+    if (extraSize) HANDLE_CUDA_ERROR(cudaMalloc(&extra, extraSize));
+}
 
-    auto expectations = getExpectations(dStateVec);
+std::array<double, QHash::nQubits> QHash::runSimulation(const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data)
+{
+    runCircuit(data);
 
-    HANDLE_CUDA_ERROR(cudaFree(dStateVec));
+    auto expectations = getExpectations();
 
     return expectations;
 }
 
-void QHash::runCircuit(cuDoubleComplex* dStateVec, const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data)
+void QHash::runCircuit(const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data)
 {
-    static const cuDoubleComplex matrixX[] = {
-        {0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}};
     static const custatevecPauli_t pauliY[] = {CUSTATEVEC_PAULI_Y};
     static const custatevecPauli_t pauliZ[] = {CUSTATEVEC_PAULI_Z};
     for (std::size_t l{0}; l < nLayers; ++l) {
@@ -66,17 +76,6 @@ void QHash::runCircuit(cuDoubleComplex* dStateVec, const std::array<unsigned cha
                 &target, 1, nullptr, nullptr, 0));
         }
 
-        std::size_t extraSize{0};
-        void* extra = nullptr;
-
-        HANDLE_CUSTATEVEC_ERROR(custatevecApplyMatrixGetWorkspaceSize(handle, CUDA_C_64F, nQubits,
-                                                                      matrixX, CUDA_C_64F,
-                                                                      CUSTATEVEC_MATRIX_LAYOUT_ROW,
-                                                                      0, 1, 1,
-                                                                      CUSTATEVEC_COMPUTE_DEFAULT,
-                                                                      &extraSize));
-        if (extraSize) HANDLE_CUDA_ERROR(cudaMalloc(&extra, extraSize));
-
         for (std::size_t i{0}; i < nQubits - 1; ++i) {
             const int32_t control = i;
             const int32_t target = control + 1;
@@ -89,11 +88,10 @@ void QHash::runCircuit(cuDoubleComplex* dStateVec, const std::array<unsigned cha
                                                           CUSTATEVEC_COMPUTE_DEFAULT, extra,
                                                           extraSize));
         }
-        if (extraSize) HANDLE_CUDA_ERROR(cudaFree(extra));
     }
 }
 
-std::array<double, QHash::nQubits> QHash::getExpectations(cuDoubleComplex* dStateVec)
+std::array<double, QHash::nQubits> QHash::getExpectations()
 {
     static const custatevecPauli_t pauliZ[] = {CUSTATEVEC_PAULI_Z};
     static const auto pauliExpectations = [] {
@@ -129,11 +127,6 @@ std::array<double, QHash::nQubits> QHash::getExpectations(cuDoubleComplex* dStat
     return expectations;
 }
 
-QHash::QHash() : ctx(), handle()
-{
-    custatevecCreate(&handle);
-}
-
 QHash& QHash::Write(const unsigned char* data, size_t len)
 {
     ctx.Write(data, len);
@@ -167,10 +160,17 @@ void QHash::Finalize(unsigned char hash[OUTPUT_SIZE])
 QHash& QHash::Reset()
 {
     ctx.Reset();
+    HANDLE_CUSTATEVEC_ERROR(custatevecInitializeStateVector(handle, dStateVec, CUDA_C_64F,
+                                                            nQubits,
+                                                            CUSTATEVEC_STATE_VECTOR_TYPE_ZERO));
     return *this;
 }
 
 QHash::~QHash()
 {
     custatevecDestroy(handle);
+
+    cudaFree(dStateVec);
+
+    if (extraSize) cudaFree(extra);
 }
