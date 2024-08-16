@@ -27,12 +27,12 @@
 std::array<double, QHash::nQubits> QHash::runSimulation(const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data)
 {
     // TODO: May overflow on 32-bit systems
-    const std::size_t stateVecSizeBytes = (1 << nQubits) * sizeof(cuComplex);
+    const std::size_t stateVecSizeBytes = (1 << nQubits) * sizeof(cuDoubleComplex);
 
     // TODO: May be better to allocate it on class initialization
-    cuComplex* dStateVec;
+    cuDoubleComplex* dStateVec;
     HANDLE_CUDA_ERROR(cudaMalloc(reinterpret_cast<void**>(&dStateVec), stateVecSizeBytes));
-    HANDLE_CUSTATEVEC_ERROR(custatevecInitializeStateVector(handle, dStateVec, CUDA_C_32F,
+    HANDLE_CUSTATEVEC_ERROR(custatevecInitializeStateVector(handle, dStateVec, CUDA_C_64F,
                                                             nQubits,
                                                             CUSTATEVEC_STATE_VECTOR_TYPE_ZERO));
 
@@ -45,10 +45,10 @@ std::array<double, QHash::nQubits> QHash::runSimulation(const std::array<unsigne
     return expectations;
 }
 
-void QHash::runCircuit(cuComplex* dStateVec, const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data)
+void QHash::runCircuit(cuDoubleComplex* dStateVec, const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data)
 {
-    static const cuComplex matrixX[] = {
-        {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 0.0f}, {0.0f, 0.0f}};
+    static const cuDoubleComplex matrixX[] = {
+        {0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}};
     static const custatevecPauli_t pauliY[] = {CUSTATEVEC_PAULI_Y};
     static const custatevecPauli_t pauliZ[] = {CUSTATEVEC_PAULI_Z};
     for (std::size_t l{0}; l < nLayers; ++l) {
@@ -56,12 +56,12 @@ void QHash::runCircuit(cuComplex* dStateVec, const std::array<unsigned char, 2 *
             const int32_t target = i;
             // RY gates
             HANDLE_CUSTATEVEC_ERROR(custatevecApplyPauliRotation(
-                handle, dStateVec, CUDA_C_32F, nQubits,
+                handle, dStateVec, CUDA_C_64F, nQubits,
                 -data[(2 * l * nQubits + i) % data.size()] * std::numbers::pi / 16, pauliY,
                 &target, 1, nullptr, nullptr, 0));
             // RZ gates
             HANDLE_CUSTATEVEC_ERROR(custatevecApplyPauliRotation(
-                handle, dStateVec, CUDA_C_32F, nQubits,
+                handle, dStateVec, CUDA_C_64F, nQubits,
                 -data[((2 * l + 1) * nQubits + i) % data.size()] * std::numbers::pi / 16, pauliZ,
                 &target, 1, nullptr, nullptr, 0));
         }
@@ -69,8 +69,8 @@ void QHash::runCircuit(cuComplex* dStateVec, const std::array<unsigned char, 2 *
         std::size_t extraSize{0};
         void* extra = nullptr;
 
-        HANDLE_CUSTATEVEC_ERROR(custatevecApplyMatrixGetWorkspaceSize(handle, CUDA_C_32F, nQubits,
-                                                                      matrixX, CUDA_C_32F,
+        HANDLE_CUSTATEVEC_ERROR(custatevecApplyMatrixGetWorkspaceSize(handle, CUDA_C_64F, nQubits,
+                                                                      matrixX, CUDA_C_64F,
                                                                       CUSTATEVEC_MATRIX_LAYOUT_ROW,
                                                                       0, 1, 1,
                                                                       CUSTATEVEC_COMPUTE_DEFAULT,
@@ -82,8 +82,8 @@ void QHash::runCircuit(cuComplex* dStateVec, const std::array<unsigned char, 2 *
             const int32_t target = control + 1;
 
             // CNOT gates, may be faster with applymatrix
-            HANDLE_CUSTATEVEC_ERROR(custatevecApplyMatrix(handle, dStateVec, CUDA_C_32F, nQubits,
-                                                          matrixX, CUDA_C_32F,
+            HANDLE_CUSTATEVEC_ERROR(custatevecApplyMatrix(handle, dStateVec, CUDA_C_64F, nQubits,
+                                                          matrixX, CUDA_C_64F,
                                                           CUSTATEVEC_MATRIX_LAYOUT_ROW, 0, &target,
                                                           1, &control, nullptr, 1,
                                                           CUSTATEVEC_COMPUTE_DEFAULT, extra,
@@ -93,7 +93,7 @@ void QHash::runCircuit(cuComplex* dStateVec, const std::array<unsigned char, 2 *
     }
 }
 
-std::array<double, QHash::nQubits> QHash::getExpectations(cuComplex* dStateVec)
+std::array<double, QHash::nQubits> QHash::getExpectations(cuDoubleComplex* dStateVec)
 {
     static const custatevecPauli_t pauliZ[] = {CUSTATEVEC_PAULI_Z};
     static const auto pauliExpectations = [] {
@@ -121,7 +121,7 @@ std::array<double, QHash::nQubits> QHash::getExpectations(cuComplex* dStateVec)
 
 
     HANDLE_CUSTATEVEC_ERROR(custatevecComputeExpectationsOnPauliBasis(
-        handle, dStateVec, CUDA_C_32F, nQubits, expectations.data(),
+        handle, dStateVec, CUDA_C_64F, nQubits, expectations.data(),
         const_cast<const custatevecPauli_t**>(pauliExpectations.data()), nQubits,
         const_cast<const int32_t**>(basisBitsArr.data()), nBasisBits.data()));
 

@@ -14,13 +14,13 @@ private:
     custatevecHandle_t handle; // TODO: should probably be a singleton
 
     static const size_t nQubits = 16;
-    static const size_t nLayers = 2; // TODO
+    static const size_t nLayers = 2;
 
     using fixedFloat = fpm::fixed<int16_t, int32_t, 15>;
 
     std::array<double, nQubits> runSimulation(const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data);
-    void runCircuit(cuComplex* dStateVec, const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data);
-    std::array<double, nQubits> getExpectations(cuComplex* dStateVec);
+    void runCircuit(cuDoubleComplex* dStateVec, const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>& data);
+    std::array<double, nQubits> getExpectations(cuDoubleComplex* dStateVec);
 
 public:
     static const size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
