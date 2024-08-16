@@ -144,6 +144,18 @@ struct Params {
         } // no default case, so the compiler can warn about missing cases
         return std::numeric_limits<int>::max();
     }
+
+    int64_t nASERTHalfLife;
+    
+    /** Used by the ASERT DAA */
+    struct ASERTAnchor {
+        int nHeight;
+        uint32_t nBits;
+        int64_t nPrevBlockTime;
+    };
+
+    /** For chains with a checkpoint after the ASERT anchor block, this is always defined */
+    std::optional<ASERTAnchor> asertAnchorParams; // TODO
 };
 
 } // namespace Consensus
