@@ -16,6 +16,7 @@
 #include <kernel/checks.h>
 #include <kernel/context.h>
 #include <kernel/validation_cache_sizes.h>
+#include <kernel/warning.h>
 
 #include <consensus/validation.h>
 #include <core_io.h>
@@ -23,11 +24,12 @@
 #include <node/caches.h>
 #include <node/chainstate.h>
 #include <random.h>
-#include <scheduler.h>
 #include <script/sigcache.h>
 #include <util/chaintype.h>
 #include <util/fs.h>
-#include <util/thread.h>
+#include <util/signalinterrupt.h>
+#include <util/task_runner.h>
+#include <util/translation.h>
 #include <validation.h>
 #include <validationinterface.h>
 
@@ -68,16 +70,7 @@ int main(int argc, char* argv[])
     Assert(InitSignatureCache(validation_cache_sizes.signature_cache_bytes));
     Assert(InitScriptExecutionCache(validation_cache_sizes.script_execution_cache_bytes));
 
-
-    // SETUP: Scheduling and Background Signals
-    CScheduler scheduler{};
-    // Start the lightweight task scheduler thread
-    scheduler.m_service_thread = std::thread(util::TraceThread, "scheduler", [&] { scheduler.serviceQueue(); });
-
-    // Gather some entropy once per minute.
-    scheduler.scheduleEvery(RandAddPeriodic, std::chrono::minutes{1});
-
-    GetMainSignals().RegisterBackgroundSignalScheduler(scheduler);
+    ValidationSignals validation_signals{std::make_unique<util::ImmediateTaskRunner>()};
 
     class KernelNotifications : public kernel::Notifications
     {
@@ -95,18 +88,21 @@ int main(int argc, char* argv[])
         {
             std::cout << "Progress: " << title.original << ", " << progress_percent << ", " << resume_possible << std::endl;
         }
-        void warning(const bilingual_str& warning) override
+        void warningSet(kernel::Warning id, const bilingual_str& message) override
         {
-            std::cout << "Warning: " << warning.original << std::endl;
+            std::cout << "Warning " << static_cast<int>(id) << " set: " << message.original << std::endl;
         }
-        void flushError(const std::string& debug_message) override
+        void warningUnset(kernel::Warning id) override
         {
-            std::cerr << "Error flushing block data to disk: " << debug_message << std::endl;
+            std::cout << "Warning " << static_cast<int>(id) << " unset" << std::endl;
         }
-        void fatalError(const std::string& debug_message, const bilingual_str& user_message) override
+        void flushError(const bilingual_str& message) override
         {
-            std::cerr << "Error: " << debug_message << std::endl;
-            std::cerr << (user_message.empty() ? "A fatal internal error occurred." : user_message.original) << std::endl;
+            std::cerr << "Error flushing block data to disk: " << message.original << std::endl;
+        }
+        void fatalError(const bilingual_str& message) override
+        {
+            std::cerr << "Error: " << message.original << std::endl;
         }
     };
     auto notifications = std::make_unique<KernelNotifications>();
@@ -118,6 +114,7 @@ int main(int argc, char* argv[])
         .chainparams = *chainparams,
         .datadir = abs_datadir,
         .notifications = *notifications,
+        .signals = &validation_signals,
     };
     const node::BlockManager::Options blockman_opts{
         .chainparams = chainman_opts.chainparams,
@@ -160,7 +157,7 @@ int main(int argc, char* argv[])
     {
         LOCK(chainman.GetMutex());
         std::cout
-        << "\t" << "Reindexing: " << std::boolalpha << node::fReindex.load() << std::noboolalpha << std::endl
+        << "\t" << "Blockfiles Indexed: " << std::boolalpha << chainman.m_blockman.m_blockfiles_indexed.load() << std::noboolalpha << std::endl
         << "\t" << "Snapshot Active: " << std::boolalpha << chainman.IsSnapshotActive() << std::noboolalpha << std::endl
         << "\t" << "Active Height: " << chainman.ActiveHeight() << std::endl
         << "\t" << "Active IBD: " << std::boolalpha << chainman.IsInitialBlockDownload() << std::noboolalpha << std::endl;
@@ -235,9 +232,9 @@ int main(int argc, char* argv[])
 
         bool new_block;
         auto sc = std::make_shared<submitblock_StateCatcher>(block.GetHash());
-        RegisterSharedValidationInterface(sc);
+        validation_signals.RegisterSharedValidationInterface(sc);
         bool accepted = chainman.ProcessNewBlock(blockptr, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/&new_block);
-        UnregisterSharedValidationInterface(sc);
+        validation_signals.UnregisterSharedValidationInterface(sc);
         if (!new_block && accepted) {
             std::cerr << "duplicate" << std::endl;
             break;
@@ -287,10 +284,9 @@ int main(int argc, char* argv[])
 epilogue:
     // Without this precise shutdown sequence, there will be a lot of nullptr
     // dereferencing and UB.
-    scheduler.stop();
     if (chainman.m_thread_load.joinable()) chainman.m_thread_load.join();
 
-    GetMainSignals().FlushBackgroundCallbacks();
+    validation_signals.FlushBackgroundCallbacks();
     {
         LOCK(cs_main);
         for (Chainstate* chainstate : chainman.GetAll()) {
@@ -300,5 +296,4 @@ epilogue:
             }
         }
     }
-    GetMainSignals().UnregisterBackgroundSignalScheduler();
 }

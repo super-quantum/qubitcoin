@@ -2,9 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#if defined(HAVE_CONFIG_H)
-#include <config/bitcoin-config.h>
-#endif
+#include <config/bitcoin-config.h> // IWYU pragma: keep
 
 #include <test/util/setup_common.h>
 
@@ -14,7 +12,6 @@
 #include <banman.h>
 #include <chainparams.h>
 #include <common/system.h>
-#include <common/url.h>
 #include <consensus/consensus.h>
 #include <consensus/params.h>
 #include <consensus/validation.h>
@@ -34,6 +31,7 @@
 #include <node/miner.h>
 #include <node/peerman_args.h>
 #include <node/validation_cache_args.h>
+#include <node/warnings.h>
 #include <noui.h>
 #include <policy/fees.h>
 #include <policy/fees_args.h>
@@ -52,6 +50,7 @@
 #include <txmempool.h>
 #include <util/chaintype.h>
 #include <util/check.h>
+#include <util/fs_helpers.h>
 #include <util/rbf.h>
 #include <util/strencodings.h>
 #include <util/string.h>
@@ -80,7 +79,6 @@ using node::RegenerateCommitments;
 using node::VerifyLoadedChainstate;
 
 const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
-UrlDecodeFn* const URL_DECODE = nullptr;
 
 /** Random context to get unique temp data dirs. Separate from g_insecure_rand_ctx, which can be seeded from a const env var */
 static FastRandomContext g_insecure_rand_ctx_temp_path;
@@ -100,9 +98,22 @@ struct NetworkSetup
 };
 static NetworkSetup g_networksetup_instance;
 
+/** Register test-only arguments */
+static void SetupUnitTestArgs(ArgsManager& argsman)
+{
+    argsman.AddArg("-testdatadir", strprintf("Custom data directory (default: %s<random_string>)", fs::PathToString(fs::temp_directory_path() / "test_common_" PACKAGE_NAME / "")),
+                   ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
+}
+
+/** Test setup failure */
+static void ExitFailure(std::string_view str_err)
+{
+    std::cerr << str_err << std::endl;
+    exit(EXIT_FAILURE);
+}
+
 BasicTestingSetup::BasicTestingSetup(const ChainType chainType, const std::vector<const char*>& extra_args)
-    : m_path_root{fs::temp_directory_path() / "test_common_" PACKAGE_NAME / g_insecure_rand_ctx_temp_path.rand256().ToString()},
-      m_args{}
+    : m_args{}
 {
     m_node.shutdown = &m_interrupt;
     m_node.args = &gArgs;
@@ -123,25 +134,58 @@ BasicTestingSetup::BasicTestingSetup(const ChainType chainType, const std::vecto
         arguments = Cat(arguments, G_TEST_COMMAND_LINE_ARGUMENTS());
     }
     util::ThreadRename("test");
-    fs::create_directories(m_path_root);
-    m_args.ForceSetArg("-datadir", fs::PathToString(m_path_root));
-    gArgs.ForceSetArg("-datadir", fs::PathToString(m_path_root));
     gArgs.ClearPathCache();
     {
         SetupServerArgs(*m_node.args);
+        SetupUnitTestArgs(*m_node.args);
         std::string error;
         if (!m_node.args->ParseParameters(arguments.size(), arguments.data(), error)) {
             m_node.args->ClearArgs();
             throw std::runtime_error{error};
         }
     }
+
+    if (!m_node.args->IsArgSet("-testdatadir")) {
+        // By default, the data directory has a random name
+        const auto rand_str{g_insecure_rand_ctx_temp_path.rand256().ToString()};
+        m_path_root = fs::temp_directory_path() / "test_common_" PACKAGE_NAME / rand_str;
+        TryCreateDirectories(m_path_root);
+    } else {
+        // Custom data directory
+        m_has_custom_datadir = true;
+        fs::path root_dir{m_node.args->GetPathArg("-testdatadir")};
+        if (root_dir.empty()) ExitFailure("-testdatadir argument is empty, please specify a path");
+
+        root_dir = fs::absolute(root_dir);
+        const std::string test_path{G_TEST_GET_FULL_NAME ? G_TEST_GET_FULL_NAME() : ""};
+        m_path_lock = root_dir / "test_common_" PACKAGE_NAME / fs::PathFromString(test_path);
+        m_path_root = m_path_lock / "datadir";
+
+        // Try to obtain the lock; if unsuccessful don't disturb the existing test.
+        TryCreateDirectories(m_path_lock);
+        if (util::LockDirectory(m_path_lock, ".lock", /*probe_only=*/false) != util::LockResult::Success) {
+            ExitFailure("Cannot obtain a lock on test data lock directory " + fs::PathToString(m_path_lock) + '\n' + "The test executable is probably already running.");
+        }
+
+        // Always start with a fresh data directory; this doesn't delete the .lock file located one level above.
+        fs::remove_all(m_path_root);
+        if (!TryCreateDirectories(m_path_root)) ExitFailure("Cannot create test data directory");
+
+        // Print the test directory name if custom.
+        std::cout << "Test directory (will not be deleted): " << m_path_root << std::endl;
+    }
+    m_args.ForceSetArg("-datadir", fs::PathToString(m_path_root));
+    gArgs.ForceSetArg("-datadir", fs::PathToString(m_path_root));
+
     SelectParams(chainType);
     SeedInsecureRand();
     if (G_TEST_LOG_FUN) LogInstance().PushBackCallback(G_TEST_LOG_FUN);
     InitLogging(*m_node.args);
     AppInitParameterInteraction(*m_node.args);
     LogInstance().StartLogging();
+    m_node.warnings = std::make_unique<node::Warnings>();
     m_node.kernel = std::make_unique<kernel::Context>();
+    m_node.ecc_context = std::make_unique<ECC_Context>();
     SetupEnvironment();
 
     ValidationCacheSizes validation_cache_sizes{};
@@ -159,10 +203,17 @@ BasicTestingSetup::BasicTestingSetup(const ChainType chainType, const std::vecto
 
 BasicTestingSetup::~BasicTestingSetup()
 {
+    m_node.ecc_context.reset();
     m_node.kernel.reset();
     SetMockTime(0s); // Reset mocktime for following tests
     LogInstance().DisconnectTestLogger();
-    fs::remove_all(m_path_root);
+    if (m_has_custom_datadir) {
+        // Only remove the lock file, preserve the data directory.
+        UnlockDirectory(m_path_lock, ".lock");
+        fs::remove(m_path_lock / ".lock");
+    } else {
+        fs::remove_all(m_path_root);
+    }
     gArgs.ClearArgs();
 }
 
@@ -175,20 +226,24 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, const std::vecto
     // from blocking due to queue overrun.
     m_node.scheduler = std::make_unique<CScheduler>();
     m_node.scheduler->m_service_thread = std::thread(util::TraceThread, "scheduler", [&] { m_node.scheduler->serviceQueue(); });
-    GetMainSignals().RegisterBackgroundSignalScheduler(*m_node.scheduler);
+    m_node.validation_signals = std::make_unique<ValidationSignals>(std::make_unique<SerialTaskRunner>(*m_node.scheduler));
 
     m_node.fee_estimator = std::make_unique<CBlockPolicyEstimator>(FeeestPath(*m_node.args), DEFAULT_ACCEPT_STALE_FEE_ESTIMATES);
-    m_node.mempool = std::make_unique<CTxMemPool>(MemPoolOptionsForTest(m_node));
+    bilingual_str error{};
+    m_node.mempool = std::make_unique<CTxMemPool>(MemPoolOptionsForTest(m_node), error);
+    Assert(error.empty());
+    m_node.warnings = std::make_unique<node::Warnings>();
 
     m_cache_sizes = CalculateCacheSizes(m_args);
 
-    m_node.notifications = std::make_unique<KernelNotifications>(*Assert(m_node.shutdown), m_node.exit_status);
+    m_node.notifications = std::make_unique<KernelNotifications>(*Assert(m_node.shutdown), m_node.exit_status, *Assert(m_node.warnings));
 
     const ChainstateManager::Options chainman_opts{
         .chainparams = chainparams,
         .datadir = m_args.GetDataDirNet(),
-        .check_block_index = true,
+        .check_block_index = 1,
         .notifications = *m_node.notifications,
+        .signals = m_node.validation_signals.get(),
         .worker_threads_num = 2,
     };
     const BlockManager::Options blockman_opts{
@@ -206,8 +261,7 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, const std::vecto
 ChainTestingSetup::~ChainTestingSetup()
 {
     if (m_node.scheduler) m_node.scheduler->stop();
-    GetMainSignals().FlushBackgroundCallbacks();
-    GetMainSignals().UnregisterBackgroundSignalScheduler();
+    m_node.validation_signals->FlushBackgroundCallbacks();
     m_node.connman.reset();
     m_node.banman.reset();
     m_node.addrman.reset();
@@ -216,6 +270,7 @@ ChainTestingSetup::~ChainTestingSetup()
     m_node.mempool.reset();
     m_node.fee_estimator.reset();
     m_node.chainman.reset();
+    m_node.validation_signals.reset();
     m_node.scheduler.reset();
 }
 
@@ -226,8 +281,8 @@ void ChainTestingSetup::LoadVerifyActivateChainstate()
     options.mempool = Assert(m_node.mempool.get());
     options.block_tree_db_in_memory = m_block_tree_db_in_memory;
     options.coins_db_in_memory = m_coins_db_in_memory;
-    options.reindex = node::fReindex;
-    options.reindex_chainstate = m_args.GetBoolArg("-reindex-chainstate", false);
+    options.wipe_block_tree_db = m_args.GetBoolArg("-reindex", false);
+    options.wipe_chainstate_db = m_args.GetBoolArg("-reindex", false) || m_args.GetBoolArg("-reindex-chainstate", false);
     options.prune = chainman.m_blockman.IsPruneMode();
     options.check_blocks = m_args.GetIntArg("-checkblocks", DEFAULT_CHECKBLOCKS);
     options.check_level = m_args.GetIntArg("-checklevel", DEFAULT_CHECKLEVEL);
@@ -270,7 +325,8 @@ TestingSetup::TestingSetup(
     peerman_opts.deterministic_rng = true;
     m_node.peerman = PeerManager::make(*m_node.connman, *m_node.addrman,
                                        m_node.banman.get(), *m_node.chainman,
-                                       *m_node.mempool, peerman_opts);
+                                       *m_node.mempool, *m_node.warnings,
+                                       peerman_opts);
 
     {
         CConnman::Options options;
@@ -318,7 +374,8 @@ CBlock TestChain100Setup::CreateBlock(
     const CScript& scriptPubKey,
     Chainstate& chainstate)
 {
-    CBlock block = BlockAssembler{chainstate, nullptr}.CreateNewBlock(scriptPubKey)->block;
+    BlockAssembler::Options options;
+    CBlock block = BlockAssembler{chainstate, nullptr, options}.CreateNewBlock(scriptPubKey)->block;
 
     Assert(block.vtx.size() == 1);
     for (const CMutableTransaction& tx : txns) {
@@ -502,9 +559,9 @@ void TestChain100Setup::MockMempoolMinFee(const CFeeRate& target_feerate)
     assert(m_node.mempool->size() == 0);
     // The target feerate cannot be too low...
     // ...otherwise the transaction's feerate will need to be negative.
-    assert(target_feerate > m_node.mempool->m_incremental_relay_feerate);
+    assert(target_feerate > m_node.mempool->m_opts.incremental_relay_feerate);
     // ...otherwise this is not meaningful. The feerate policy uses the maximum of both feerates.
-    assert(target_feerate > m_node.mempool->m_min_relay_feerate);
+    assert(target_feerate > m_node.mempool->m_opts.min_relay_feerate);
 
     // Manually create an invalid transaction. Manually set the fee in the CTxMemPoolEntry to
     // achieve the exact target feerate.
@@ -515,7 +572,7 @@ void TestChain100Setup::MockMempoolMinFee(const CFeeRate& target_feerate)
     LockPoints lp;
     // The new mempool min feerate is equal to the removed package's feerate + incremental feerate.
     const auto tx_fee = target_feerate.GetFee(GetVirtualTransactionSize(*tx)) -
-        m_node.mempool->m_incremental_relay_feerate.GetFee(GetVirtualTransactionSize(*tx));
+        m_node.mempool->m_opts.incremental_relay_feerate.GetFee(GetVirtualTransactionSize(*tx));
     m_node.mempool->addUnchecked(CTxMemPoolEntry(tx, /*fee=*/tx_fee,
                                                  /*time=*/0, /*entry_height=*/1, /*entry_sequence=*/0,
                                                  /*spends_coinbase=*/true, /*sigops_cost=*/1, lp));

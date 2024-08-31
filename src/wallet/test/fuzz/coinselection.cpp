@@ -270,7 +270,7 @@ FUZZ_TARGET(coinselection)
     if (result_srd) {
         assert(result_srd->GetSelectedValue() >= target);
         assert(result_srd->GetChange(CHANGE_LOWER, coin_params.m_change_fee) > 0); // Demonstrate that SRD creates change of at least CHANGE_LOWER
-        result_srd->ComputeAndSetWaste(coin_params.min_viable_change, coin_params.m_cost_of_change, coin_params.m_change_fee);
+        result_srd->RecalculateWaste(coin_params.min_viable_change, coin_params.m_cost_of_change, coin_params.m_change_fee);
         (void)result_srd->GetShuffledInputVector();
         (void)result_srd->GetInputSet();
     }
@@ -279,7 +279,7 @@ FUZZ_TARGET(coinselection)
     auto result_knapsack = KnapsackSolver(group_all, target, change_target, fast_random_context, MAX_STANDARD_TX_WEIGHT);
     if (result_knapsack) {
         assert(result_knapsack->GetSelectedValue() >= target);
-        result_knapsack->ComputeAndSetWaste(coin_params.min_viable_change, coin_params.m_cost_of_change, coin_params.m_change_fee);
+        result_knapsack->RecalculateWaste(coin_params.min_viable_change, coin_params.m_cost_of_change, coin_params.m_change_fee);
         (void)result_knapsack->GetShuffledInputVector();
         (void)result_knapsack->GetInputSet();
     }
@@ -291,7 +291,10 @@ FUZZ_TARGET(coinselection)
     }
 
     std::vector<COutput> utxos;
-    std::vector<util::Result<SelectionResult>> results{result_srd, result_knapsack, result_bnb};
+    std::vector<util::Result<SelectionResult>> results;
+    results.emplace_back(std::move(result_srd));
+    results.emplace_back(std::move(result_knapsack));
+    results.emplace_back(std::move(result_bnb));
     CAmount new_total_balance{CreateCoins(fuzzed_data_provider, utxos, coin_params, next_locktime)};
     if (new_total_balance > 0) {
         std::set<std::shared_ptr<COutput>> new_utxo_pool;

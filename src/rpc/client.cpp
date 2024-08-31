@@ -128,6 +128,8 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "testmempoolaccept", 0, "rawtxs" },
     { "testmempoolaccept", 1, "maxfeerate" },
     { "submitpackage", 0, "package" },
+    { "submitpackage", 1, "maxfeerate" },
+    { "submitpackage", 2, "maxburnamount" },
     { "combinerawtransaction", 0, "txs" },
     { "fundrawtransaction", 1, "options" },
     { "fundrawtransaction", 1, "add_inputs"},
@@ -275,6 +277,11 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "logging", 1, "exclude" },
     { "disconnectnode", 1, "nodeid" },
     { "upgradewallet", 0, "version" },
+    { "gethdkeys", 0, "active_only" },
+    { "gethdkeys", 0, "options" },
+    { "gethdkeys", 0, "private" },
+    { "createwalletdescriptor", 1, "options" },
+    { "createwalletdescriptor", 1, "internal" },
     // Echo with conversion (For testing only)
     { "echojson", 0, "arg0" },
     { "echojson", 1, "arg1" },
@@ -384,7 +391,7 @@ UniValue RPCConvertNamedValues(const std::string &strMethod, const std::vector<s
         // Use pushKVEnd instead of pushKV to avoid overwriting an explicit
         // "args" value with an implicit one. Let the RPC server handle the
         // request as given.
-        params.pushKVEnd("args", positional_args);
+        params.pushKVEnd("args", std::move(positional_args));
     }
 
     return params;

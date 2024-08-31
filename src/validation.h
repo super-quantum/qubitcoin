@@ -93,7 +93,7 @@ extern const std::vector<std::string> CHECKLEVEL_DOC;
 
 CAmount GetBlockSubsidy(int nHeight, const Consensus::Params& consensusParams);
 
-bool FatalError(kernel::Notifications& notifications, BlockValidationState& state, const std::string& strMessage, const bilingual_str& userMessage = {});
+bool FatalError(kernel::Notifications& notifications, BlockValidationState& state, const bilingual_str& message);
 
 /** Guess verification progress (as a fraction between 0.0=genesis and 1.0=current tip). */
 double GuessVerificationProgress(const ChainTxData& data, const CBlockIndex* pindex);
@@ -113,7 +113,6 @@ void PruneBlockFilesManual(Chainstate& active_chainstate, int nManualPruneHeight
 *| txid in mempool?          | yes            | no                | no*              | yes            | yes               |
 *| wtxid in mempool?         | yes            | no                | no*              | yes            | no                |
 *| m_state                   | yes, IsValid() | yes, IsInvalid()  | yes, IsInvalid() | yes, IsValid() | yes, IsValid()    |
-*| m_replaced_transactions   | yes            | no                | no               | no             | no                |
 *| m_vsize                   | yes            | no                | no               | yes            | no                |
 *| m_base_fees               | yes            | no                | no               | yes            | no                |
 *| m_effective_feerate       | yes            | yes               | no               | no             | no                |
@@ -139,7 +138,7 @@ struct MempoolAcceptResult {
     const TxValidationState m_state;
 
     /** Mempool transactions replaced by the tx. */
-    const std::optional<std::list<CTransactionRef>> m_replaced_transactions;
+    const std::list<CTransactionRef> m_replaced_transactions;
     /** Virtual size as used by the mempool, calculated using serialized size and sigops. */
     const std::optional<int64_t> m_vsize;
     /** Raw base fees in satoshis. */
@@ -274,13 +273,15 @@ MempoolAcceptResult AcceptToMemoryPool(Chainstate& active_chainstate, const CTra
 /**
 * Validate (and maybe submit) a package to the mempool. See doc/policy/packages.md for full details
 * on package validation rules.
-* @param[in]    test_accept     When true, run validation checks but don't submit to mempool.
+* @param[in]    test_accept         When true, run validation checks but don't submit to mempool.
+* @param[in]    client_maxfeerate    If exceeded by an individual transaction, rest of (sub)package evaluation is aborted.
+*                                   Only for sanity checks against local submission of transactions.
 * @returns a PackageMempoolAcceptResult which includes a MempoolAcceptResult for each transaction.
 * If a transaction fails, validation will exit early and some results may be missing. It is also
 * possible for the package to be partially submitted.
 */
 PackageMempoolAcceptResult ProcessNewPackage(Chainstate& active_chainstate, CTxMemPool& pool,
-                                                   const Package& txns, bool test_accept)
+                                                   const Package& txns, bool test_accept, const std::optional<CFeeRate>& client_maxfeerate)
                                                    EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /* Mempool validation helper functions */
@@ -382,8 +383,8 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
 /** Check if a block has been mutated (with respect to its merkle root and witness commitments). */
 bool IsBlockMutated(const CBlock& block, bool check_witness_root);
 
-/** Return the sum of the work on a given set of headers */
-arith_uint256 CalculateHeadersWork(const std::vector<CBlockHeader>& headers);
+/** Return the sum of the claimed work on a given set of headers. No verification of PoW is done. */
+arith_uint256 CalculateClaimedHeadersWork(const std::vector<CBlockHeader>& headers);
 
 enum class VerifyDBResult {
     SUCCESS,
@@ -476,7 +477,7 @@ enum class CoinsCacheSizeState
  * current best chain.
  *
  * Eventually, the API here is targeted at being exposed externally as a
- * consumable libconsensus library, so any functions added must only call
+ * consumable library, so any functions added must only call
  * other class member functions, pure functions in other parts of the consensus
  * library, callbacks via the validation interface, or read/write-to-disk
  * functions (eventually this will also be via callbacks).
@@ -583,9 +584,10 @@ public:
     const CBlockIndex* SnapshotBase() EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     /**
-     * The set of all CBlockIndex entries with either BLOCK_VALID_TRANSACTIONS (for
-     * itself and all ancestors) *or* BLOCK_ASSUMED_VALID (if using background
-     * chainstates) and as good as our current tip or better. Entries may be failed,
+     * The set of all CBlockIndex entries that have as much work as our current
+     * tip or more, and transaction data needed to be validated (with
+     * BLOCK_VALID_TRANSACTIONS for each block and its parents back to the
+     * genesis block or an assumeutxo snapshot block). Entries may be failed,
      * though, and pruning nodes may be missing the data for the block.
      */
     std::set<CBlockIndex*, node::CBlockIndexWorkComparator> setBlockIndexCandidates;
@@ -883,6 +885,12 @@ private:
     CBlockIndex* m_best_invalid GUARDED_BY(::cs_main){nullptr};
 
     //! Internal helper for ActivateSnapshot().
+    //!
+    //! De-serialization of a snapshot that is created with
+    //! CreateUTXOSnapshot() in rpc/blockchain.cpp.
+    //! To reduce space the serialization format of the snapshot avoids
+    //! duplication of tx hashes. The code takes advantage of the guarantee by
+    //! leveldb that keys are lexicographically sorted.
     [[nodiscard]] bool PopulateAndValidateSnapshot(
         Chainstate& snapshot_chainstate,
         AutoFile& coins_file,
@@ -930,7 +938,7 @@ public:
 
     const CChainParams& GetParams() const { return m_options.chainparams; }
     const Consensus::Params& GetConsensus() const { return m_options.chainparams.GetConsensus(); }
-    bool ShouldCheckBlockIndex() const { return *Assert(m_options.check_block_index); }
+    bool ShouldCheckBlockIndex() const;
     const arith_uint256& MinimumChainWork() const { return *Assert(m_options.minimum_chain_work); }
     const uint256& AssumedValidBlock() const { return *Assert(m_options.assumed_valid_block); }
     kernel::Notifications& GetNotifications() const { return m_options.notifications; };

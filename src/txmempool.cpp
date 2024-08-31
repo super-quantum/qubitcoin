@@ -16,7 +16,9 @@
 #include <policy/settings.h>
 #include <random.h>
 #include <reverse_iterator.h>
+#include <tinyformat.h>
 #include <util/check.h>
+#include <util/feefrac.h>
 #include <util/moneystr.h>
 #include <util/overflow.h>
 #include <util/result.h>
@@ -25,6 +27,7 @@
 #include <util/translation.h>
 #include <validationinterface.h>
 
+#include <algorithm>
 #include <cmath>
 #include <numeric>
 #include <optional>
@@ -91,7 +94,7 @@ void CTxMemPool::UpdateForDescendants(txiter updateIt, cacheMap& cachedDescendan
             // Don't directly remove the transaction here -- doing so would
             // invalidate iterators in cachedDescendants. Mark it for removal
             // by inserting into descendants_to_remove.
-            if (descendant.GetCountWithAncestors() > uint64_t(m_limits.ancestor_count) || descendant.GetSizeWithAncestors() > m_limits.ancestor_size_vbytes) {
+            if (descendant.GetCountWithAncestors() > uint64_t(m_opts.limits.ancestor_count) || descendant.GetSizeWithAncestors() > m_opts.limits.ancestor_size_vbytes) {
                 descendants_to_remove.insert(descendant.GetTx().GetHash());
             }
         }
@@ -202,14 +205,14 @@ util::Result<void> CTxMemPool::CheckPackageLimits(const Package& package,
     size_t pack_count = package.size();
 
     // Package itself is busting mempool limits; should be rejected even if no staged_ancestors exist
-    if (pack_count > static_cast<uint64_t>(m_limits.ancestor_count)) {
-        return util::Error{Untranslated(strprintf("package count %u exceeds ancestor count limit [limit: %u]", pack_count, m_limits.ancestor_count))};
-    } else if (pack_count > static_cast<uint64_t>(m_limits.descendant_count)) {
-        return util::Error{Untranslated(strprintf("package count %u exceeds descendant count limit [limit: %u]", pack_count, m_limits.descendant_count))};
-    } else if (total_vsize > m_limits.ancestor_size_vbytes) {
-        return util::Error{Untranslated(strprintf("package size %u exceeds ancestor size limit [limit: %u]", total_vsize, m_limits.ancestor_size_vbytes))};
-    } else if (total_vsize > m_limits.descendant_size_vbytes) {
-        return util::Error{Untranslated(strprintf("package size %u exceeds descendant size limit [limit: %u]", total_vsize, m_limits.descendant_size_vbytes))};
+    if (pack_count > static_cast<uint64_t>(m_opts.limits.ancestor_count)) {
+        return util::Error{Untranslated(strprintf("package count %u exceeds ancestor count limit [limit: %u]", pack_count, m_opts.limits.ancestor_count))};
+    } else if (pack_count > static_cast<uint64_t>(m_opts.limits.descendant_count)) {
+        return util::Error{Untranslated(strprintf("package count %u exceeds descendant count limit [limit: %u]", pack_count, m_opts.limits.descendant_count))};
+    } else if (total_vsize > m_opts.limits.ancestor_size_vbytes) {
+        return util::Error{Untranslated(strprintf("package size %u exceeds ancestor size limit [limit: %u]", total_vsize, m_opts.limits.ancestor_size_vbytes))};
+    } else if (total_vsize > m_opts.limits.descendant_size_vbytes) {
+        return util::Error{Untranslated(strprintf("package size %u exceeds descendant size limit [limit: %u]", total_vsize, m_opts.limits.descendant_size_vbytes))};
     }
 
     CTxMemPoolEntry::Parents staged_ancestors;
@@ -218,8 +221,8 @@ util::Result<void> CTxMemPool::CheckPackageLimits(const Package& package,
             std::optional<txiter> piter = GetIter(input.prevout.hash);
             if (piter) {
                 staged_ancestors.insert(**piter);
-                if (staged_ancestors.size() + package.size() > static_cast<uint64_t>(m_limits.ancestor_count)) {
-                    return util::Error{Untranslated(strprintf("too many unconfirmed parents [limit: %u]", m_limits.ancestor_count))};
+                if (staged_ancestors.size() + package.size() > static_cast<uint64_t>(m_opts.limits.ancestor_count)) {
+                    return util::Error{Untranslated(strprintf("too many unconfirmed parents [limit: %u]", m_opts.limits.ancestor_count))};
                 }
             }
         }
@@ -228,7 +231,7 @@ util::Result<void> CTxMemPool::CheckPackageLimits(const Package& package,
     // considered together must be within limits even if they are not interdependent. This may be
     // stricter than the limits for each individual transaction.
     const auto ancestors{CalculateAncestorsAndCheckLimits(total_vsize, package.size(),
-                                                          staged_ancestors, m_limits)};
+                                                          staged_ancestors, m_opts.limits)};
     // It's possible to overestimate the ancestor/descendant totals.
     if (!ancestors.has_value()) return util::Error{Untranslated("possibly " + util::ErrorString(ancestors).original)};
     return {};
@@ -394,19 +397,19 @@ void CTxMemPoolEntry::UpdateAncestorState(int32_t modifySize, CAmount modifyFee,
     assert(int(nSigOpCostWithAncestors) >= 0);
 }
 
-CTxMemPool::CTxMemPool(const Options& opts)
-    : m_check_ratio{opts.check_ratio},
-      m_max_size_bytes{opts.max_size_bytes},
-      m_expiry{opts.expiry},
-      m_incremental_relay_feerate{opts.incremental_relay_feerate},
-      m_min_relay_feerate{opts.min_relay_feerate},
-      m_dust_relay_feerate{opts.dust_relay_feerate},
-      m_permit_bare_multisig{opts.permit_bare_multisig},
-      m_max_datacarrier_bytes{opts.max_datacarrier_bytes},
-      m_require_standard{opts.require_standard},
-      m_full_rbf{opts.full_rbf},
-      m_persist_v1_dat{opts.persist_v1_dat},
-      m_limits{opts.limits}
+//! Clamp option values and populate the error if options are not valid.
+static CTxMemPool::Options&& Flatten(CTxMemPool::Options&& opts, bilingual_str& error)
+{
+    opts.check_ratio = std::clamp<int>(opts.check_ratio, 0, 1'000'000);
+    int64_t descendant_limit_bytes = opts.limits.descendant_size_vbytes * 40;
+    if (opts.max_size_bytes < 0 || opts.max_size_bytes < descendant_limit_bytes) {
+        error = strprintf(_("-maxmempool must be at least %d MB"), std::ceil(descendant_limit_bytes / 1'000'000.0));
+    }
+    return std::move(opts);
+}
+
+CTxMemPool::CTxMemPool(Options opts, bilingual_str& error)
+    : m_opts{Flatten(std::move(opts), error)}
 {
 }
 
@@ -487,12 +490,12 @@ void CTxMemPool::removeUnchecked(txiter it, MemPoolRemovalReason reason)
     // even if not directly reported below.
     uint64_t mempool_sequence = GetAndIncrementSequence();
 
-    if (reason != MemPoolRemovalReason::BLOCK) {
+    if (reason != MemPoolRemovalReason::BLOCK && m_opts.signals) {
         // Notify clients that a transaction has been removed from the mempool
         // for any reason except being included in a block. Clients interested
         // in transactions included in blocks can subscribe to the BlockConnected
         // notification.
-        GetMainSignals().TransactionRemovedFromMempool(it->GetSharedTx(), reason, mempool_sequence);
+        m_opts.signals->TransactionRemovedFromMempool(it->GetSharedTx(), reason, mempool_sequence);
     }
     TRACE5(mempool, removed,
         it->GetTx().GetHash().data(),
@@ -643,16 +646,18 @@ void CTxMemPool::removeForBlock(const std::vector<CTransactionRef>& vtx, unsigne
         removeConflicts(*tx);
         ClearPrioritisation(tx->GetHash());
     }
-    GetMainSignals().MempoolTransactionsRemovedForBlock(txs_removed_for_block, nBlockHeight);
+    if (m_opts.signals) {
+        m_opts.signals->MempoolTransactionsRemovedForBlock(txs_removed_for_block, nBlockHeight);
+    }
     lastRollingFeeUpdate = GetTime();
     blockSinceLastRollingFeeBump = true;
 }
 
 void CTxMemPool::check(const CCoinsViewCache& active_coins_tip, int64_t spendheight) const
 {
-    if (m_check_ratio == 0) return;
+    if (m_opts.check_ratio == 0) return;
 
-    if (GetRand(m_check_ratio) >= 1) return;
+    if (GetRand(m_opts.check_ratio) >= 1) return;
 
     AssertLockHeld(::cs_main);
     LOCK(cs);
@@ -1104,12 +1109,12 @@ CFeeRate CTxMemPool::GetMinFee(size_t sizelimit) const {
         rollingMinimumFeeRate = rollingMinimumFeeRate / pow(2.0, (time - lastRollingFeeUpdate) / halflife);
         lastRollingFeeUpdate = time;
 
-        if (rollingMinimumFeeRate < (double)m_incremental_relay_feerate.GetFeePerK() / 2) {
+        if (rollingMinimumFeeRate < (double)m_opts.incremental_relay_feerate.GetFeePerK() / 2) {
             rollingMinimumFeeRate = 0;
             return CFeeRate(0);
         }
     }
-    return std::max(CFeeRate(llround(rollingMinimumFeeRate)), m_incremental_relay_feerate);
+    return std::max(CFeeRate(llround(rollingMinimumFeeRate)), m_opts.incremental_relay_feerate);
 }
 
 void CTxMemPool::trackPackageRemoved(const CFeeRate& rate) {
@@ -1133,7 +1138,7 @@ void CTxMemPool::TrimToSize(size_t sizelimit, std::vector<COutPoint>* pvNoSpends
         // to have 0 fee). This way, we don't allow txn to enter mempool with feerate
         // equal to txn which were removed with no block in between.
         CFeeRate removed(it->GetModFeesWithDescendants(), it->GetSizeWithDescendants());
-        removed += m_incremental_relay_feerate;
+        removed += m_opts.incremental_relay_feerate;
         trackPackageRemoved(removed);
         maxFeeRateRemoved = std::max(maxFeeRateRemoved, removed);
 
@@ -1234,4 +1239,131 @@ std::vector<CTxMemPool::txiter> CTxMemPool::GatherClusters(const std::vector<uin
         }
     }
     return clustered_txs;
+}
+
+std::optional<std::string> CTxMemPool::CheckConflictTopology(const setEntries& direct_conflicts)
+{
+    for (const auto& direct_conflict : direct_conflicts) {
+        // Ancestor and descendant counts are inclusive of the tx itself.
+        const auto ancestor_count{direct_conflict->GetCountWithAncestors()};
+        const auto descendant_count{direct_conflict->GetCountWithDescendants()};
+        const bool has_ancestor{ancestor_count > 1};
+        const bool has_descendant{descendant_count > 1};
+        const auto& txid_string{direct_conflict->GetSharedTx()->GetHash().ToString()};
+        // The only allowed configurations are:
+        // 1 ancestor and 0 descendant
+        // 0 ancestor and 1 descendant
+        // 0 ancestor and 0 descendant
+        if (ancestor_count > 2) {
+            return strprintf("%s has %u ancestors, max 1 allowed", txid_string, ancestor_count - 1);
+        } else if (descendant_count > 2) {
+            return strprintf("%s has %u descendants, max 1 allowed", txid_string, descendant_count - 1);
+        } else if (has_ancestor && has_descendant) {
+            return strprintf("%s has both ancestor and descendant, exceeding cluster limit of 2", txid_string);
+        }
+        // Additionally enforce that:
+        // If we have a child,  we are its only parent.
+        // If we have a parent, we are its only child.
+        if (has_descendant) {
+            const auto& our_child = direct_conflict->GetMemPoolChildrenConst().begin();
+            if (our_child->get().GetCountWithAncestors() > 2) {
+                return strprintf("%s is not the only parent of child %s",
+                                 txid_string, our_child->get().GetSharedTx()->GetHash().ToString());
+            }
+        } else if (has_ancestor) {
+            const auto& our_parent = direct_conflict->GetMemPoolParentsConst().begin();
+            if (our_parent->get().GetCountWithDescendants() > 2) {
+                return strprintf("%s is not the only child of parent %s",
+                                 txid_string, our_parent->get().GetSharedTx()->GetHash().ToString());
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+util::Result<std::pair<std::vector<FeeFrac>, std::vector<FeeFrac>>> CTxMemPool::CalculateChunksForRBF(CAmount replacement_fees, int64_t replacement_vsize, const setEntries& direct_conflicts, const setEntries& all_conflicts)
+{
+    Assume(replacement_vsize > 0);
+
+    auto err_string{CheckConflictTopology(direct_conflicts)};
+    if (err_string.has_value()) {
+        // Unsupported topology for calculating a feerate diagram
+        return util::Error{Untranslated(err_string.value())};
+    }
+
+    // new diagram will have chunks that consist of each ancestor of
+    // direct_conflicts that is at its own fee/size, along with the replacement
+    // tx/package at its own fee/size
+
+    // old diagram will consist of the ancestors and descendants of each element of
+    // all_conflicts.  every such transaction will either be at its own feerate (followed
+    // by any descendant at its own feerate), or as a single chunk at the descendant's
+    // ancestor feerate.
+
+    std::vector<FeeFrac> old_chunks;
+    // Step 1: build the old diagram.
+
+    // The above clusters are all trivially linearized;
+    // they have a strict topology of 1 or two connected transactions.
+
+    // OLD: Compute existing chunks from all affected clusters
+    for (auto txiter : all_conflicts) {
+        // Does this transaction have descendants?
+        if (txiter->GetCountWithDescendants() > 1) {
+            // Consider this tx when we consider the descendant.
+            continue;
+        }
+        // Does this transaction have ancestors?
+        FeeFrac individual{txiter->GetModifiedFee(), txiter->GetTxSize()};
+        if (txiter->GetCountWithAncestors() > 1) {
+            // We'll add chunks for either the ancestor by itself and this tx
+            // by itself, or for a combined package.
+            FeeFrac package{txiter->GetModFeesWithAncestors(), static_cast<int32_t>(txiter->GetSizeWithAncestors())};
+            if (individual >> package) {
+                // The individual feerate is higher than the package, and
+                // therefore higher than the parent's fee. Chunk these
+                // together.
+                old_chunks.emplace_back(package);
+            } else {
+                // Add two points, one for the parent and one for this child.
+                old_chunks.emplace_back(package - individual);
+                old_chunks.emplace_back(individual);
+            }
+        } else {
+            old_chunks.emplace_back(individual);
+        }
+    }
+
+    // No topology restrictions post-chunking; sort
+    std::sort(old_chunks.begin(), old_chunks.end(), std::greater());
+
+    std::vector<FeeFrac> new_chunks;
+
+    /* Step 2: build the NEW diagram
+     * CON = Conflicts of proposed chunk
+     * CNK = Proposed chunk
+     * NEW = OLD - CON + CNK: New diagram includes all chunks in OLD, minus
+     * the conflicts, plus the proposed chunk
+     */
+
+    // OLD - CON: Add any parents of direct conflicts that are not conflicted themselves
+    for (auto direct_conflict : direct_conflicts) {
+        // If a direct conflict has an ancestor that is not in all_conflicts,
+        // it can be affected by the replacement of the child.
+        if (direct_conflict->GetMemPoolParentsConst().size() > 0) {
+            // Grab the parent.
+            const CTxMemPoolEntry& parent = direct_conflict->GetMemPoolParentsConst().begin()->get();
+            if (!all_conflicts.count(mapTx.iterator_to(parent))) {
+                // This transaction would be left over, so add to the NEW
+                // diagram.
+                new_chunks.emplace_back(parent.GetModifiedFee(), parent.GetTxSize());
+            }
+        }
+    }
+    // + CNK: Add the proposed chunk itself
+    new_chunks.emplace_back(replacement_fees, int32_t(replacement_vsize));
+
+    // No topology restrictions post-chunking; sort
+    std::sort(new_chunks.begin(), new_chunks.end(), std::greater());
+    return std::make_pair(old_chunks, new_chunks);
 }

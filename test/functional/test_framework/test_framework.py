@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (c) 2014-2022 The Bitcoin Core developers
+# Copyright (c) 2014-present The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Base class for RPC testing."""
@@ -96,6 +96,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         """Sets test framework defaults. Do not override this method. Instead, override the set_test_params() method"""
         self.chain: str = 'regtest'
         self.setup_clean_chain: bool = False
+        self.noban_tx_relay: bool = False
         self.nodes: list[TestNode] = []
         self.extra_args = None
         self.network_thread = None
@@ -163,7 +164,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                             help="Don't stop bitcoinds after the test execution")
         parser.add_argument("--cachedir", dest="cachedir", default=os.path.abspath(os.path.dirname(os.path.realpath(__file__)) + "/../../cache"),
                             help="Directory for caching pregenerated datadirs (default: %(default)s)")
-        parser.add_argument("--tmpdir", dest="tmpdir", help="Root directory for datadirs")
+        parser.add_argument("--tmpdir", dest="tmpdir", help="Root directory for datadirs (must not exist)")
         parser.add_argument("-l", "--loglevel", dest="loglevel", default="INFO",
                             help="log events at this level and higher to the console. Can be set to DEBUG, INFO, WARNING, ERROR or CRITICAL. Passing --loglevel DEBUG will output all logs to console. Note that logs at all levels are always written to the test_framework.log file in the temporary test directory.")
         parser.add_argument("--tracerpc", dest="trace_rpc", default=False, action="store_true",
@@ -191,6 +192,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         parser.add_argument("--timeout-factor", dest="timeout_factor", type=float, help="adjust test timeouts by a factor. Setting it to 0 disables all timeouts")
         parser.add_argument("--v2transport", dest="v2transport", default=False, action="store_true",
                             help="use BIP324 v2 connections between all nodes by default")
+        parser.add_argument("--v1transport", dest="v1transport", default=False, action="store_true",
+                            help="Explicitly use v1 transport (can be used to overwrite global --v2transport option)")
 
         self.add_options(parser)
         # Running TestShell in a Jupyter notebook causes an additional -f argument
@@ -206,6 +209,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         config = configparser.ConfigParser()
         config.read_file(open(self.options.configfile))
         self.config = config
+        if self.options.v1transport:
+            self.options.v2transport=False
 
         if "descriptors" not in self.options:
             # Wallet is not required by the test at all and the value of self.options.descriptors won't matter.
@@ -439,6 +444,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 n.createwallet(wallet_name=wallet_name, descriptors=self.options.descriptors, load_on_startup=True)
             n.importprivkey(privkey=n.get_deterministic_priv_key().key, label='coinbase', rescan=True)
 
+    # Only enables wallet support when the module is available
+    def enable_wallet_if_possible(self):
+        self._requires_wallet = self.is_wallet_compiled()
+
     def run_test(self):
         """Tests must override this method to define test logic"""
         raise NotImplementedError
@@ -494,6 +503,10 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             extra_confs = [[]] * num_nodes
         if extra_args is None:
             extra_args = [[]] * num_nodes
+        # Whitelist peers to speed up tx relay / mempool sync. Don't use it if testing tx relay or timing.
+        if self.noban_tx_relay:
+            for i in range(len(extra_args)):
+                extra_args[i] = extra_args[i] + ["-whitelist=noban,in,out@127.0.0.1"]
         if versions is None:
             versions = [None] * num_nodes
         if binary is None:
@@ -577,10 +590,16 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             # Wait for nodes to stop
             node.wait_until_stopped()
 
-    def restart_node(self, i, extra_args=None):
+    def restart_node(self, i, extra_args=None, clear_addrman=False):
         """Stop and start a test node"""
         self.stop_node(i)
-        self.start_node(i, extra_args)
+        if clear_addrman:
+            peers_dat = self.nodes[i].chain_path / "peers.dat"
+            os.remove(peers_dat)
+            with self.nodes[i].assert_debug_log(expected_msgs=[f'Creating peers.dat because the file was not found ("{peers_dat}")']):
+                self.start_node(i, extra_args)
+        else:
+            self.start_node(i, extra_args)
 
     def wait_for_node_exit(self, i, timeout):
         self.nodes[i].process.wait(timeout)
@@ -595,8 +614,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         """
         from_connection = self.nodes[a]
         to_connection = self.nodes[b]
-        from_num_peers = 1 + len(from_connection.getpeerinfo())
-        to_num_peers = 1 + len(to_connection.getpeerinfo())
         ip_port = "127.0.0.1:" + str(p2p_port(b))
 
         if peer_advertises_v2 is None:
@@ -612,19 +629,28 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if not wait_for_connect:
             return
 
-        # poll until version handshake complete to avoid race conditions
-        # with transaction relaying
-        # See comments in net_processing:
-        # * Must have a version message before anything else
-        # * Must have a verack message before anything else
-        self.wait_until(lambda: sum(peer['version'] != 0 for peer in from_connection.getpeerinfo()) == from_num_peers)
-        self.wait_until(lambda: sum(peer['version'] != 0 for peer in to_connection.getpeerinfo()) == to_num_peers)
-        self.wait_until(lambda: sum(peer['bytesrecv_per_msg'].pop('verack', 0) >= 21 for peer in from_connection.getpeerinfo()) == from_num_peers)
-        self.wait_until(lambda: sum(peer['bytesrecv_per_msg'].pop('verack', 0) >= 21 for peer in to_connection.getpeerinfo()) == to_num_peers)
-        # The message bytes are counted before processing the message, so make
-        # sure it was fully processed by waiting for a ping.
-        self.wait_until(lambda: sum(peer["bytesrecv_per_msg"].pop("pong", 0) >= 29 for peer in from_connection.getpeerinfo()) == from_num_peers)
-        self.wait_until(lambda: sum(peer["bytesrecv_per_msg"].pop("pong", 0) >= 29 for peer in to_connection.getpeerinfo()) == to_num_peers)
+        # Use subversion as peer id. Test nodes have their node number appended to the user agent string
+        from_connection_subver = from_connection.getnetworkinfo()['subversion']
+        to_connection_subver = to_connection.getnetworkinfo()['subversion']
+
+        def find_conn(node, peer_subversion, inbound):
+            return next(filter(lambda peer: peer['subver'] == peer_subversion and peer['inbound'] == inbound, node.getpeerinfo()), None)
+
+        self.wait_until(lambda: find_conn(from_connection, to_connection_subver, inbound=False) is not None)
+        self.wait_until(lambda: find_conn(to_connection, from_connection_subver, inbound=True) is not None)
+
+        def check_bytesrecv(peer, msg_type, min_bytes_recv):
+            assert peer is not None, "Error: peer disconnected"
+            return peer['bytesrecv_per_msg'].pop(msg_type, 0) >= min_bytes_recv
+
+        # Poll until version handshake (fSuccessfullyConnected) is complete to
+        # avoid race conditions, because some message types are blocked from
+        # being sent or received before fSuccessfullyConnected.
+        #
+        # As the flag fSuccessfullyConnected is not exposed, check it by
+        # waiting for a pong, which can only happen after the flag was set.
+        self.wait_until(lambda: check_bytesrecv(find_conn(from_connection, to_connection_subver, inbound=False), 'pong', 29))
+        self.wait_until(lambda: check_bytesrecv(find_conn(to_connection, from_connection_subver, inbound=True), 'pong', 29))
 
     def disconnect_nodes(self, a, b):
         def disconnect_nodes_helper(node_a, node_b):

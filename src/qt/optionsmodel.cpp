@@ -2,9 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#if defined(HAVE_CONFIG_H)
-#include <config/bitcoin-config.h>
-#endif
+#include <config/bitcoin-config.h> // IWYU pragma: keep
 
 #include <qt/optionsmodel.h>
 
@@ -396,6 +394,7 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
     return successful;
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 QVariant OptionsModel::getOption(OptionID option, const std::string& suffix) const
 {
     auto setting = [&]{ return node().getPersistentSetting(SettingName(option) + suffix); };
@@ -508,6 +507,7 @@ QFont OptionsModel::getFontForMoney() const
     return getFontForChoice(m_font_money);
 }
 
+// NOLINTNEXTLINE(misc-no-recursion)
 bool OptionsModel::setOption(OptionID option, const QVariant& value, const std::string& suffix)
 {
     auto changed = [&] { return value.isValid() && value != getOption(option, suffix); };

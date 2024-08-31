@@ -3,9 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#if defined(HAVE_CONFIG_H)
-#include <config/bitcoin-config.h>
-#endif
+#include <config/bitcoin-config.h> // IWYU pragma: keep
 
 #include <chainparams.h>
 #include <httpserver.h>
@@ -97,7 +95,7 @@ static RPCHelpMan mockscheduler()
 
     const NodeContext& node_context{EnsureAnyNodeContext(request.context)};
     CHECK_NONFATAL(node_context.scheduler)->MockForward(std::chrono::seconds{delta_seconds});
-    SyncWithValidationInterfaceQueue();
+    CHECK_NONFATAL(node_context.validation_signals)->SyncWithValidationInterfaceQueue();
     for (const auto& chain_client : node_context.chain_clients) {
         chain_client->schedulerMockForward(std::chrono::seconds(delta_seconds));
     }
@@ -353,7 +351,7 @@ static UniValue SummaryToJSON(const IndexSummary&& summary, std::string index_na
     UniValue entry(UniValue::VOBJ);
     entry.pushKV("synced", summary.synced);
     entry.pushKV("best_block_height", summary.best_block_height);
-    ret_summary.pushKV(summary.name, entry);
+    ret_summary.pushKV(summary.name, std::move(entry));
     return ret_summary;
 }
 

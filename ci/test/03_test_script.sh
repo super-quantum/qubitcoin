@@ -110,15 +110,6 @@ fi
 ccache --zero-stats
 PRINT_CCACHE_STATISTICS="ccache --version | head -n 1 && ccache --show-stats"
 
-if [ -n "$ANDROID_TOOLS_URL" ]; then
-  make distclean || true
-  ./autogen.sh
-  bash -c "./configure $BITCOIN_CONFIG_ALL $BITCOIN_CONFIG" || ( (cat config.log) && false)
-  make "${MAKEJOBS}" && cd src/qt && ANDROID_HOME=${ANDROID_HOME} ANDROID_NDK_HOME=${ANDROID_NDK_HOME} make apk
-  bash -c "${PRINT_CCACHE_STATISTICS}"
-  exit 0
-fi
-
 BITCOIN_CONFIG_ALL="${BITCOIN_CONFIG_ALL} --enable-external-signer --prefix=$BASE_OUTDIR"
 
 if [ -n "$CONFIG_SHELL" ]; then
@@ -180,7 +171,11 @@ if [ "${RUN_TIDY}" = "true" ]; then
 
   set -eo pipefail
   cd "${BASE_BUILD_DIR}/bitcoin-$HOST/src/"
-  ( run-clang-tidy-"${TIDY_LLVM_V}" -quiet -load="/tidy-build/libbitcoin-tidy.so" "${MAKEJOBS}" ) | grep -C5 "error"
+  if ! ( run-clang-tidy-"${TIDY_LLVM_V}" -quiet -load="/tidy-build/libbitcoin-tidy.so" "${MAKEJOBS}" | tee tmp.tidy-out.txt ); then
+    grep -C5 "error: " tmp.tidy-out.txt
+    echo "^^^ ⚠️ Failure generated from clang-tidy"
+    false
+  fi
   # Filter out files by regex here, because regex may not be
   # accepted in src/.bear-tidy-config
   # Filter out:

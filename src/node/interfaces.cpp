@@ -8,15 +8,18 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <common/args.h>
+#include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <external_signer.h>
 #include <index/blockfilterindex.h>
 #include <init.h>
 #include <interfaces/chain.h>
 #include <interfaces/handler.h>
+#include <interfaces/mining.h>
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <kernel/chain.h>
+#include <kernel/context.h>
 #include <kernel/mempool_entry.h>
 #include <logging.h>
 #include <mapport.h>
@@ -29,7 +32,10 @@
 #include <node/context.h>
 #include <node/interface_ui.h>
 #include <node/mini_miner.h>
+#include <node/miner.h>
 #include <node/transaction.h>
+#include <node/types.h>
+#include <node/warnings.h>
 #include <policy/feerate.h>
 #include <policy/fees.h>
 #include <policy/policy.h>
@@ -47,14 +53,12 @@
 #include <util/check.h>
 #include <util/result.h>
 #include <util/signalinterrupt.h>
+#include <util/string.h>
 #include <util/translation.h>
 #include <validation.h>
 #include <validationinterface.h>
-#include <warnings.h>
 
-#if defined(HAVE_CONFIG_H)
-#include <config/bitcoin-config.h>
-#endif
+#include <config/bitcoin-config.h> // IWYU pragma: keep
 
 #include <any>
 #include <memory>
@@ -68,8 +72,11 @@ using interfaces::Chain;
 using interfaces::FoundBlock;
 using interfaces::Handler;
 using interfaces::MakeSignalHandler;
+using interfaces::Mining;
 using interfaces::Node;
 using interfaces::WalletLoader;
+using node::BlockAssembler;
+using util::Join;
 
 namespace node {
 // All members of the classes in this namespace are intentionally public, as the
@@ -91,7 +98,7 @@ public:
     explicit NodeImpl(NodeContext& context) { setContext(&context); }
     void initLogging() override { InitLogging(args()); }
     void initParameterInteraction() override { InitParameterInteraction(args()); }
-    bilingual_str getWarnings() override { return GetWarnings(true); }
+    bilingual_str getWarnings() override { return Join(Assert(m_context->warnings)->GetMessages(), Untranslated("<hr />")); }
     int getExitStatus() override { return Assert(m_context)->exit_status.load(); }
     uint32_t getLogCategories() override { return LogInstance().GetCategoryMask(); }
     bool baseInitialize() override
@@ -99,7 +106,9 @@ public:
         if (!AppInitBasicSetup(args(), Assert(context())->exit_status)) return false;
         if (!AppInitParameterInteraction(args())) return false;
 
+        m_context->warnings = std::make_unique<node::Warnings>();
         m_context->kernel = std::make_unique<kernel::Context>();
+        m_context->ecc_context = std::make_unique<ECC_Context>();
         if (!AppInitSanityChecks(*m_context->kernel)) return false;
 
         if (!AppInitLockDataDirectory()) return false;
@@ -122,7 +131,7 @@ public:
     void startShutdown() override
     {
         if (!(*Assert(Assert(m_context)->shutdown))()) {
-            LogPrintf("Error: failed to send shutdown signal\n");
+            LogError("Failed to send shutdown signal\n");
         }
         // Stop RPC for clean shutdown if any of waitfor* commands is executed.
         if (args().GetBoolArg("-server", false)) {
@@ -317,7 +326,7 @@ public:
     CFeeRate getDustRelayFee() override
     {
         if (!m_context->mempool) return CFeeRate{DUST_RELAY_TX_FEE};
-        return m_context->mempool->m_dust_relay_feerate;
+        return m_context->mempool->m_opts.dust_relay_feerate;
     }
     UniValue executeRpc(const std::string& command, const UniValue& params, const std::string& uri) override
     {
@@ -406,6 +415,7 @@ public:
     NodeContext* m_context{nullptr};
 };
 
+// NOLINTNEXTLINE(misc-no-recursion)
 bool FillBlock(const CBlockIndex* index, const FoundBlock& block, UniqueLock<RecursiveMutex>& lock, const CChain& active, const BlockManager& blockman)
 {
     if (!index) return false;
@@ -460,19 +470,20 @@ public:
 class NotificationsHandlerImpl : public Handler
 {
 public:
-    explicit NotificationsHandlerImpl(std::shared_ptr<Chain::Notifications> notifications)
-        : m_proxy(std::make_shared<NotificationsProxy>(std::move(notifications)))
+    explicit NotificationsHandlerImpl(ValidationSignals& signals, std::shared_ptr<Chain::Notifications> notifications)
+        : m_signals{signals}, m_proxy{std::make_shared<NotificationsProxy>(std::move(notifications))}
     {
-        RegisterSharedValidationInterface(m_proxy);
+        m_signals.RegisterSharedValidationInterface(m_proxy);
     }
     ~NotificationsHandlerImpl() override { disconnect(); }
     void disconnect() override
     {
         if (m_proxy) {
-            UnregisterSharedValidationInterface(m_proxy);
+            m_signals.UnregisterSharedValidationInterface(m_proxy);
             m_proxy.reset();
         }
     }
+    ValidationSignals& m_signals;
     std::shared_ptr<NotificationsProxy> m_proxy;
 };
 
@@ -698,7 +709,7 @@ public:
     {
         const CTxMemPool::Limits default_limits{};
 
-        const CTxMemPool::Limits& limits{m_node.mempool ? m_node.mempool->m_limits : default_limits};
+        const CTxMemPool::Limits& limits{m_node.mempool ? m_node.mempool->m_opts.limits : default_limits};
 
         limit_ancestor_count = limits.ancestor_count;
         limit_descendant_count = limits.descendant_count;
@@ -729,17 +740,17 @@ public:
     CFeeRate relayMinFee() override
     {
         if (!m_node.mempool) return CFeeRate{DEFAULT_MIN_RELAY_TX_FEE};
-        return m_node.mempool->m_min_relay_feerate;
+        return m_node.mempool->m_opts.min_relay_feerate;
     }
     CFeeRate relayIncrementalFee() override
     {
         if (!m_node.mempool) return CFeeRate{DEFAULT_INCREMENTAL_RELAY_FEE};
-        return m_node.mempool->m_incremental_relay_feerate;
+        return m_node.mempool->m_opts.incremental_relay_feerate;
     }
     CFeeRate relayDustFee() override
     {
         if (!m_node.mempool) return CFeeRate{DUST_RELAY_TX_FEE};
-        return m_node.mempool->m_dust_relay_feerate;
+        return m_node.mempool->m_opts.dust_relay_feerate;
     }
     bool havePruned() override
     {
@@ -761,12 +772,12 @@ public:
     }
     std::unique_ptr<Handler> handleNotifications(std::shared_ptr<Notifications> notifications) override
     {
-        return std::make_unique<NotificationsHandlerImpl>(std::move(notifications));
+        return std::make_unique<NotificationsHandlerImpl>(validation_signals(), std::move(notifications));
     }
     void waitForNotificationsIfTipChanged(const uint256& old_tip) override
     {
         if (!old_tip.IsNull() && old_tip == WITH_LOCK(::cs_main, return chainman().ActiveChain().Tip()->GetBlockHash())) return;
-        SyncWithValidationInterfaceQueue();
+        validation_signals().SyncWithValidationInterfaceQueue();
     }
     std::unique_ptr<Handler> handleRpc(const CRPCCommand& command) override
     {
@@ -822,6 +833,60 @@ public:
     NodeContext* context() override { return &m_node; }
     ArgsManager& args() { return *Assert(m_node.args); }
     ChainstateManager& chainman() { return *Assert(m_node.chainman); }
+    ValidationSignals& validation_signals() { return *Assert(m_node.validation_signals); }
+    NodeContext& m_node;
+};
+
+class MinerImpl : public Mining
+{
+public:
+    explicit MinerImpl(NodeContext& node) : m_node(node) {}
+
+    bool isTestChain() override
+    {
+        return chainman().GetParams().IsTestChain();
+    }
+
+    bool isInitialBlockDownload() override
+    {
+        return chainman().IsInitialBlockDownload();
+    }
+
+    std::optional<uint256> getTipHash() override
+    {
+        LOCK(::cs_main);
+        CBlockIndex* tip{chainman().ActiveChain().Tip()};
+        if (!tip) return {};
+        return tip->GetBlockHash();
+    }
+
+    bool processNewBlock(const std::shared_ptr<const CBlock>& block, bool* new_block) override
+    {
+        return chainman().ProcessNewBlock(block, /*force_processing=*/true, /*min_pow_checked=*/true, /*new_block=*/new_block);
+    }
+
+    unsigned int getTransactionsUpdated() override
+    {
+        return context()->mempool->GetTransactionsUpdated();
+    }
+
+    bool testBlockValidity(BlockValidationState& state, const CBlock& block, bool check_merkle_root) override
+    {
+        LOCK(::cs_main);
+        return TestBlockValidity(state, chainman().GetParams(), chainman().ActiveChainstate(), block, chainman().ActiveChain().Tip(), /*fCheckPOW=*/false, check_merkle_root);
+    }
+
+    std::unique_ptr<CBlockTemplate> createNewBlock(const CScript& script_pub_key, bool use_mempool) override
+    {
+        BlockAssembler::Options options;
+        ApplyArgsManOptions(gArgs, options);
+
+        LOCK(::cs_main);
+        return BlockAssembler{chainman().ActiveChainstate(), use_mempool ? context()->mempool.get() : nullptr, options}.CreateNewBlock(script_pub_key);
+    }
+
+    NodeContext* context() override { return &m_node; }
+    ChainstateManager& chainman() { return *Assert(m_node.chainman); }
     NodeContext& m_node;
 };
 } // namespace
@@ -830,4 +895,5 @@ public:
 namespace interfaces {
 std::unique_ptr<Node> MakeNode(node::NodeContext& context) { return std::make_unique<node::NodeImpl>(context); }
 std::unique_ptr<Chain> MakeChain(node::NodeContext& context) { return std::make_unique<node::ChainImpl>(context); }
+std::unique_ptr<Mining> MakeMining(node::NodeContext& context) { return std::make_unique<node::MinerImpl>(context); }
 } // namespace interfaces

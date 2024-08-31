@@ -30,7 +30,7 @@
 static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesisOutputScript, uint32_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
 {
     CMutableTransaction txNew;
-    txNew.nVersion = 1;
+    txNew.version = 1;
     txNew.vin.resize(1);
     txNew.vout.resize(1);
     txNew.vin[0].scriptSig = CScript() << 486604799 << CScriptNum(4) << std::vector<unsigned char>((const unsigned char*)pszTimestamp, (const unsigned char*)pszTimestamp + strlen(pszTimestamp));
@@ -156,15 +156,15 @@ public:
         // This is fine at runtime as we'll fall back to using them as an addrfetch if they don't support the
         // service bits we want, but we should get them updated to support all service bits wanted by any
         // release ASAP to avoid it where possible.
-        // vSeeds.emplace_back("seed.bitcoin.sipa.be.");                        // Pieter Wuille, only supports x1, x5, x9, and xd
-        // vSeeds.emplace_back("dnsseed.bluematt.me.");                         // Matt Corallo, only supports x9
+        // vSeeds.emplace_back("seed.bitcoin.sipa.be."); // Pieter Wuille, only supports x1, x5, x9, and xd
+        // vSeeds.emplace_back("dnsseed.bluematt.me."); // Matt Corallo, only supports x9
         // vSeeds.emplace_back("dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us."); // Luke Dashjr
-        // vSeeds.emplace_back("seed.bitcoinstats.com.");                       // Christian Decker, supports x1 - xf
-        // vSeeds.emplace_back("seed.bitcoin.jonasschnelli.ch.");               // Jonas Schnelli, only supports x1, x5, x9, and xd
-        // vSeeds.emplace_back("seed.btc.petertodd.net.");                      // Peter Todd, only supports x1, x5, x9, and xd
-        // vSeeds.emplace_back("seed.bitcoin.sprovoost.nl.");                   // Sjors Provoost
-        // vSeeds.emplace_back("dnsseed.emzy.de.");                             // Stephan Oeste
-        // vSeeds.emplace_back("seed.bitcoin.wiz.biz.");                        // Jason Maurice
+        // vSeeds.emplace_back("seed.bitcoinstats.com."); // Christian Decker, supports x1 - xf
+        // vSeeds.emplace_back("seed.bitcoin.jonasschnelli.ch."); // Jonas Schnelli, only supports x1, x5, x9, and xd
+        // vSeeds.emplace_back("seed.btc.petertodd.net."); // Peter Todd, only supports x1, x5, x9, and xd
+        // vSeeds.emplace_back("seed.bitcoin.sprovoost.nl."); // Sjors Provoost
+        // vSeeds.emplace_back("dnsseed.emzy.de."); // Stephan Oeste
+        // vSeeds.emplace_back("seed.bitcoin.wiz.biz."); // Jason Maurice
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 0);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 5);
@@ -565,4 +565,34 @@ std::unique_ptr<const CChainParams> CChainParams::Main()
 std::unique_ptr<const CChainParams> CChainParams::TestNet()
 {
     return std::make_unique<const CTestNetParams>();
+}
+
+std::vector<int> CChainParams::GetAvailableSnapshotHeights() const
+{
+    std::vector<int> heights;
+    heights.reserve(m_assumeutxo_data.size());
+
+    for (const auto& data : m_assumeutxo_data) {
+        heights.emplace_back(data.height);
+    }
+    return heights;
+}
+
+std::optional<ChainType> GetNetworkForMagic(const MessageStartChars& message)
+{
+    const auto mainnet_msg = CChainParams::Main()->MessageStart();
+    const auto testnet_msg = CChainParams::TestNet()->MessageStart();
+    const auto regtest_msg = CChainParams::RegTest({})->MessageStart();
+    const auto signet_msg = CChainParams::SigNet({})->MessageStart();
+
+    if (std::equal(message.begin(), message.end(), mainnet_msg.data())) {
+        return ChainType::MAIN;
+    } else if (std::equal(message.begin(), message.end(), testnet_msg.data())) {
+        return ChainType::TESTNET;
+    } else if (std::equal(message.begin(), message.end(), regtest_msg.data())) {
+        return ChainType::REGTEST;
+    } else if (std::equal(message.begin(), message.end(), signet_msg.data())) {
+        return ChainType::SIGNET;
+    }
+    return std::nullopt;
 }

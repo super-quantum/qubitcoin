@@ -11,6 +11,7 @@
 #include <core_io.h>
 #include <kernel/mempool_entry.h>
 #include <node/mempool_persist_args.h>
+#include <node/types.h>
 #include <policy/rbf.h>
 #include <policy/settings.h>
 #include <primitives/transaction.h>
@@ -28,9 +29,12 @@
 
 using kernel::DumpMempool;
 
+using node::DEFAULT_MAX_BURN_AMOUNT;
 using node::DEFAULT_MAX_RAW_TX_FEE_RATE;
 using node::MempoolPath;
 using node::NodeContext;
+using node::TransactionError;
+using util::ToString;
 
 static RPCHelpMan sendrawtransaction()
 {
@@ -46,7 +50,7 @@ static RPCHelpMan sendrawtransaction()
             {"maxfeerate", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK())},
              "Reject transactions whose fee rate is higher than the specified value, expressed in " + CURRENCY_UNIT +
                  "/kvB.\nFee rates larger than 1BTC/kvB are rejected.\nSet to 0 to accept any fee rate."},
-            {"maxburnamount", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(0)},
+            {"maxburnamount", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_BURN_AMOUNT)},
              "Reject transactions with provably unspendable outputs (e.g. 'datacarrier' outputs that use the OP_RETURN opcode) greater than the specified value, expressed in " + CURRENCY_UNIT + ".\n"
              "If burning funds through unspendable outputs is desired, increase this value.\n"
              "This check is based on heuristics and does not guarantee spendability of outputs.\n"},
@@ -81,7 +85,7 @@ static RPCHelpMan sendrawtransaction()
 
             CTransactionRef tx(MakeTransactionRef(std::move(mtx)));
 
-            const CFeeRate max_raw_tx_fee_rate{ParseFeeRate(self.Arg<UniValue>(1))};
+            const CFeeRate max_raw_tx_fee_rate{ParseFeeRate(self.Arg<UniValue>("maxfeerate"))};
 
             int64_t virtual_size = GetVirtualTransactionSize(*tx);
             CAmount max_raw_tx_fee = max_raw_tx_fee_rate.GetFee(virtual_size);
@@ -161,7 +165,7 @@ static RPCHelpMan testmempoolaccept()
                                    "Array must contain between 1 and " + ToString(MAX_PACKAGE_COUNT) + " transactions.");
             }
 
-            const CFeeRate max_raw_tx_fee_rate{ParseFeeRate(self.Arg<UniValue>(1))};
+            const CFeeRate max_raw_tx_fee_rate{ParseFeeRate(self.Arg<UniValue>("maxfeerate"))};
 
             std::vector<CTransactionRef> txns;
             txns.reserve(raw_transactions.size());
@@ -180,7 +184,7 @@ static RPCHelpMan testmempoolaccept()
             Chainstate& chainstate = chainman.ActiveChainstate();
             const PackageMempoolAcceptResult package_result = [&] {
                 LOCK(::cs_main);
-                if (txns.size() > 1) return ProcessNewPackage(chainstate, mempool, txns, /*test_accept=*/true);
+                if (txns.size() > 1) return ProcessNewPackage(chainstate, mempool, txns, /*test_accept=*/true, /*client_maxfeerate=*/{});
                 return PackageMempoolAcceptResult(txns[0]->GetWitnessHash(),
                                                   chainman.ProcessTransaction(txns[0], /*test_accept=*/true));
             }();
@@ -201,7 +205,7 @@ static RPCHelpMan testmempoolaccept()
                 auto it = package_result.m_tx_results.find(tx->GetWitnessHash());
                 if (exit_early || it == package_result.m_tx_results.end()) {
                     // Validation unfinished. Just return the txid and wtxid.
-                    rpc_result.push_back(result_inner);
+                    rpc_result.push_back(std::move(result_inner));
                     continue;
                 }
                 const auto& tx_result = it->second;
@@ -228,8 +232,8 @@ static RPCHelpMan testmempoolaccept()
                         for (const auto& wtxid : tx_result.m_wtxids_fee_calculations.value()) {
                             effective_includes_res.push_back(wtxid.ToString());
                         }
-                        fees.pushKV("effective-includes", effective_includes_res);
-                        result_inner.pushKV("fees", fees);
+                        fees.pushKV("effective-includes", std::move(effective_includes_res));
+                        result_inner.pushKV("fees", std::move(fees));
                     }
                 } else {
                     result_inner.pushKV("allowed", false);
@@ -240,7 +244,7 @@ static RPCHelpMan testmempoolaccept()
                         result_inner.pushKV("reject-reason", state.GetRejectReason());
                     }
                 }
-                rpc_result.push_back(result_inner);
+                rpc_result.push_back(std::move(result_inner));
             }
             return rpc_result;
         },
@@ -294,7 +298,7 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
     fees.pushKV("modified", ValueFromAmount(e.GetModifiedFee()));
     fees.pushKV("ancestor", ValueFromAmount(e.GetModFeesWithAncestors()));
     fees.pushKV("descendant", ValueFromAmount(e.GetModFeesWithDescendants()));
-    info.pushKV("fees", fees);
+    info.pushKV("fees", std::move(fees));
 
     const CTransaction& tx = e.GetTx();
     std::set<std::string> setDepends;
@@ -310,14 +314,14 @@ static void entryToJSON(const CTxMemPool& pool, UniValue& info, const CTxMemPool
         depends.push_back(dep);
     }
 
-    info.pushKV("depends", depends);
+    info.pushKV("depends", std::move(depends));
 
     UniValue spent(UniValue::VARR);
     for (const CTxMemPoolEntry& child : e.GetMemPoolChildrenConst()) {
         spent.push_back(child.GetTx().GetHash().ToString());
     }
 
-    info.pushKV("spentby", spent);
+    info.pushKV("spentby", std::move(spent));
 
     // Add opt-in RBF status
     bool rbfStatus = false;
@@ -346,7 +350,7 @@ UniValue MempoolToJSON(const CTxMemPool& pool, bool verbose, bool include_mempoo
             // Mempool has unique entries so there is no advantage in using
             // UniValue::pushKV, which checks if the key already exists in O(N).
             // UniValue::pushKVEnd is used instead which currently is O(1).
-            o.pushKVEnd(e.GetTx().GetHash().ToString(), info);
+            o.pushKVEnd(e.GetTx().GetHash().ToString(), std::move(info));
         }
         return o;
     } else {
@@ -363,7 +367,7 @@ UniValue MempoolToJSON(const CTxMemPool& pool, bool verbose, bool include_mempoo
             return a;
         } else {
             UniValue o(UniValue::VOBJ);
-            o.pushKV("txids", a);
+            o.pushKV("txids", std::move(a));
             o.pushKV("mempool_sequence", mempool_sequence);
             return o;
         }
@@ -473,7 +477,7 @@ static RPCHelpMan getmempoolancestors()
             const uint256& _hash = e.GetTx().GetHash();
             UniValue info(UniValue::VOBJ);
             entryToJSON(mempool, info, e);
-            o.pushKV(_hash.ToString(), info);
+            o.pushKV(_hash.ToString(), std::move(info));
         }
         return o;
     }
@@ -538,7 +542,7 @@ static RPCHelpMan getmempooldescendants()
             const uint256& _hash = e.GetTx().GetHash();
             UniValue info(UniValue::VOBJ);
             entryToJSON(mempool, info, e);
-            o.pushKV(_hash.ToString(), info);
+            o.pushKV(_hash.ToString(), std::move(info));
         }
         return o;
     }
@@ -652,7 +656,7 @@ static RPCHelpMan gettxspendingprevout()
                     o.pushKV("spendingtxid", spendingTx->GetHash().ToString());
                 }
 
-                result.push_back(o);
+                result.push_back(std::move(o));
             }
 
             return result;
@@ -670,12 +674,12 @@ UniValue MempoolInfoToJSON(const CTxMemPool& pool)
     ret.pushKV("bytes", (int64_t)pool.GetTotalTxSize());
     ret.pushKV("usage", (int64_t)pool.DynamicMemoryUsage());
     ret.pushKV("total_fee", ValueFromAmount(pool.GetTotalFee()));
-    ret.pushKV("maxmempool", pool.m_max_size_bytes);
-    ret.pushKV("mempoolminfee", ValueFromAmount(std::max(pool.GetMinFee(), pool.m_min_relay_feerate).GetFeePerK()));
-    ret.pushKV("minrelaytxfee", ValueFromAmount(pool.m_min_relay_feerate.GetFeePerK()));
-    ret.pushKV("incrementalrelayfee", ValueFromAmount(pool.m_incremental_relay_feerate.GetFeePerK()));
+    ret.pushKV("maxmempool", pool.m_opts.max_size_bytes);
+    ret.pushKV("mempoolminfee", ValueFromAmount(std::max(pool.GetMinFee(), pool.m_opts.min_relay_feerate).GetFeePerK()));
+    ret.pushKV("minrelaytxfee", ValueFromAmount(pool.m_opts.min_relay_feerate.GetFeePerK()));
+    ret.pushKV("incrementalrelayfee", ValueFromAmount(pool.m_opts.incremental_relay_feerate.GetFeePerK()));
     ret.pushKV("unbroadcastcount", uint64_t{pool.GetUnbroadcastTxs().size()});
-    ret.pushKV("fullrbf", pool.m_full_rbf);
+    ret.pushKV("fullrbf", pool.m_opts.full_rbf);
     return ret;
 }
 
@@ -812,16 +816,25 @@ static RPCHelpMan submitpackage()
 {
     return RPCHelpMan{"submitpackage",
         "Submit a package of raw transactions (serialized, hex-encoded) to local node.\n"
-        "The package must consist of a child with its parents, and none of the parents may depend on one another.\n"
         "The package will be validated according to consensus and mempool policy rules. If any transaction passes, it will be accepted to mempool.\n"
         "This RPC is experimental and the interface may be unstable. Refer to doc/policy/packages.md for documentation on package policies.\n"
         "Warning: successful submission does not mean the transactions will propagate throughout the network.\n"
         ,
         {
-            {"package", RPCArg::Type::ARR, RPCArg::Optional::NO, "An array of raw transactions.",
+            {"package", RPCArg::Type::ARR, RPCArg::Optional::NO, "An array of raw transactions.\n"
+                "The package must solely consist of a child and its parents. None of the parents may depend on each other.\n"
+                "The package must be topologically sorted, with the child being the last element in the array.",
                 {
                     {"rawtx", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, ""},
                 },
+            },
+            {"maxfeerate", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK())},
+             "Reject transactions whose fee rate is higher than the specified value, expressed in " + CURRENCY_UNIT +
+                 "/kvB.\nFee rates larger than 1BTC/kvB are rejected.\nSet to 0 to accept any fee rate."},
+            {"maxburnamount", RPCArg::Type::AMOUNT, RPCArg::Default{FormatMoney(DEFAULT_MAX_BURN_AMOUNT)},
+             "Reject transactions with provably unspendable outputs (e.g. 'datacarrier' outputs that use the OP_RETURN opcode) greater than the specified value, expressed in " + CURRENCY_UNIT + ".\n"
+             "If burning funds through unspendable outputs is desired, increase this value.\n"
+             "This check is based on heuristics and does not guarantee spendability of outputs.\n"
             },
         },
         RPCResult{
@@ -851,16 +864,27 @@ static RPCHelpMan submitpackage()
             },
         },
         RPCExamples{
-            HelpExampleCli("testmempoolaccept", "[rawtx1, rawtx2]") +
-            HelpExampleCli("submitpackage", "[rawtx1, rawtx2]")
+            HelpExampleRpc("submitpackage", R"(["rawtx1", "rawtx2"])") +
+            HelpExampleCli("submitpackage", R"('["rawtx1", "rawtx2"]')")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
         {
             const UniValue raw_transactions = request.params[0].get_array();
-            if (raw_transactions.size() < 1 || raw_transactions.size() > MAX_PACKAGE_COUNT) {
+            if (raw_transactions.size() < 2 || raw_transactions.size() > MAX_PACKAGE_COUNT) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER,
-                                   "Array must contain between 1 and " + ToString(MAX_PACKAGE_COUNT) + " transactions.");
+                                   "Array must contain between 2 and " + ToString(MAX_PACKAGE_COUNT) + " transactions.");
             }
+
+            // Fee check needs to be run with chainstate and package context
+            const CFeeRate max_raw_tx_fee_rate{ParseFeeRate(self.Arg<UniValue>("maxfeerate"))};
+            std::optional<CFeeRate> client_maxfeerate{max_raw_tx_fee_rate};
+            // 0-value is special; it's mapped to no sanity check
+            if (max_raw_tx_fee_rate == CFeeRate(0)) {
+                client_maxfeerate = std::nullopt;
+            }
+
+            // Burn sanity check is run with no context
+            const CAmount max_burn_amount = request.params[2].isNull() ? 0 : AmountFromValue(request.params[2]);
 
             std::vector<CTransactionRef> txns;
             txns.reserve(raw_transactions.size());
@@ -870,6 +894,13 @@ static RPCHelpMan submitpackage()
                     throw JSONRPCError(RPC_DESERIALIZATION_ERROR,
                                        "TX decode failed: " + rawtx.get_str() + " Make sure the tx has at least one input.");
                 }
+
+                for (const auto& out : mtx.vout) {
+                    if((out.scriptPubKey.IsUnspendable() || !out.scriptPubKey.HasValidOps()) && out.nValue > max_burn_amount) {
+                        throw JSONRPCTransactionError(TransactionError::MAX_BURN_EXCEEDED);
+                    }
+                }
+
                 txns.emplace_back(MakeTransactionRef(std::move(mtx)));
             }
             if (!IsChildWithParentsTree(txns)) {
@@ -879,7 +910,7 @@ static RPCHelpMan submitpackage()
             NodeContext& node = EnsureAnyNodeContext(request.context);
             CTxMemPool& mempool = EnsureMemPool(node);
             Chainstate& chainstate = EnsureChainman(node).ActiveChainstate();
-            const auto package_result = WITH_LOCK(::cs_main, return ProcessNewPackage(chainstate, mempool, txns, /*test_accept=*/ false));
+            const auto package_result = WITH_LOCK(::cs_main, return ProcessNewPackage(chainstate, mempool, txns, /*test_accept=*/ false, client_maxfeerate));
 
             std::string package_msg = "success";
 
@@ -964,22 +995,20 @@ static RPCHelpMan submitpackage()
                         for (const auto& wtxid : tx_result.m_wtxids_fee_calculations.value()) {
                             effective_includes_res.push_back(wtxid.ToString());
                         }
-                        fees.pushKV("effective-includes", effective_includes_res);
+                        fees.pushKV("effective-includes", std::move(effective_includes_res));
                     }
-                    result_inner.pushKV("fees", fees);
-                    if (it->second.m_replaced_transactions.has_value()) {
-                        for (const auto& ptx : it->second.m_replaced_transactions.value()) {
-                            replaced_txids.insert(ptx->GetHash());
-                        }
+                    result_inner.pushKV("fees", std::move(fees));
+                    for (const auto& ptx : it->second.m_replaced_transactions) {
+                        replaced_txids.insert(ptx->GetHash());
                     }
                     break;
                 }
-                tx_result_map.pushKV(tx->GetWitnessHash().GetHex(), result_inner);
+                tx_result_map.pushKV(tx->GetWitnessHash().GetHex(), std::move(result_inner));
             }
-            rpc_result.pushKV("tx-results", tx_result_map);
+            rpc_result.pushKV("tx-results", std::move(tx_result_map));
             UniValue replaced_list(UniValue::VARR);
             for (const uint256& hash : replaced_txids) replaced_list.push_back(hash.ToString());
-            rpc_result.pushKV("replaced-transactions", replaced_list);
+            rpc_result.pushKV("replaced-transactions", std::move(replaced_list));
             return rpc_result;
         },
     };

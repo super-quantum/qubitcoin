@@ -65,11 +65,10 @@ namespace BCLog {
 #ifdef DEBUG_LOCKCONTENTION
         LOCK        = (1 << 24),
 #endif
-        UTIL        = (1 << 25),
-        BLOCKSTORAGE = (1 << 26),
-        TXRECONCILIATION = (1 << 27),
-        SCAN        = (1 << 28),
-        TXPACKAGES  = (1 << 29),
+        BLOCKSTORAGE = (1 << 25),
+        TXRECONCILIATION = (1 << 26),
+        SCAN        = (1 << 27),
+        TXPACKAGES  = (1 << 28),
         ALL         = ~(uint32_t)0,
     };
     enum class Level {
@@ -190,7 +189,7 @@ namespace BCLog {
         /** Returns a string with the log categories in alphabetical order. */
         std::string LogCategoriesString() const
         {
-            return Join(LogCategoriesList(), ", ", [&](const LogCategory& i) { return i.category; });
+            return util::Join(LogCategoriesList(), ", ", [&](const LogCategory& i) { return i.category; });
         };
 
         //! Returns a string with all user-selectable log levels.
@@ -215,7 +214,7 @@ static inline bool LogAcceptCategory(BCLog::LogFlags category, BCLog::Level leve
 /** Return true if str parses as a log category and set the flag */
 bool GetLogCategory(BCLog::LogFlags& flag, const std::string& str);
 
-// Be conservative when using LogPrintf/error or other things which
+// Be conservative when using functions that
 // unconditionally log to debug.log! It should not be the case that an inbound
 // peer can fill up a user's disk with debug.log entries.
 
@@ -262,12 +261,5 @@ static inline void LogPrintf_(const std::string& logging_function, const std::st
 
 // Deprecated conditional logging
 #define LogPrint(category, ...)  LogDebug(category, __VA_ARGS__)
-
-template <typename... Args>
-bool error(const char* fmt, const Args&... args)
-{
-    LogPrintf("ERROR: %s\n", tfm::format(fmt, args...));
-    return false;
-}
 
 #endif // BITCOIN_LOGGING_H

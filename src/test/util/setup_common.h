@@ -6,6 +6,7 @@
 #define BITCOIN_TEST_UTIL_SETUP_COMMON_H
 
 #include <common/args.h> // IWYU pragma: export
+#include <kernel/context.h>
 #include <key.h>
 #include <node/caches.h>
 #include <node/context.h> // IWYU pragma: export
@@ -15,6 +16,7 @@
 #include <util/chaintype.h> // IWYU pragma: export
 #include <util/check.h>
 #include <util/fs.h>
+#include <util/signalinterrupt.h>
 #include <util/string.h>
 #include <util/vector.h>
 
@@ -31,6 +33,9 @@ extern const std::function<void(const std::string&)> G_TEST_LOG_FUN;
 
 /** Retrieve the command line arguments. */
 extern const std::function<std::vector<const char*>()> G_TEST_COMMAND_LINE_ARGUMENTS;
+
+/** Retrieve the unit test name. */
+extern const std::function<std::string()> G_TEST_GET_FULL_NAME;
 
 // Enable BOOST_CHECK_EQUAL for enum class types
 namespace std {
@@ -53,7 +58,9 @@ struct BasicTestingSetup {
     explicit BasicTestingSetup(const ChainType chainType = ChainType::MAIN, const std::vector<const char*>& extra_args = {});
     ~BasicTestingSetup();
 
-    const fs::path m_path_root;
+    fs::path m_path_root;
+    fs::path m_path_lock;
+    bool m_has_custom_datadir{false};
     ArgsManager m_args;
 };
 
