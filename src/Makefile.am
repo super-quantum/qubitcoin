@@ -8,8 +8,7 @@ print-%: FORCE
 
 DIST_SUBDIRS = secp256k1
 
-CUSTATEVEC_LDFLAGS_STATIC = -L$(CUDA_PATH)/lib64 -lcublas_static -L$(CUQUANTUM_ROOT)/lib -lcustatevec_static -lcublasLt_static -lculibos -lcudart_static
-CUSTATEVEC_LDFLAGS = -L$(CUDA_PATH)/lib64 -lcublas -L$(CUQUANTUM_ROOT)/lib -lcustatevec -lcudart
+CUSTATEVEC_LDFLAGS = -L$(CUDA_PATH)/lib64 -L$(CUQUANTUM_ROOT)/lib -lcustatevec_static -lcublas -lcudart
 CUSTATEVEC_CXXFLAGS = -I$(CUDA_PATH)/include -I$(CUQUANTUM_ROOT)/include
 
 AM_LDFLAGS = $(LIBTOOL_LDFLAGS) $(HARDENED_LDFLAGS) $(GPROF_LDFLAGS) $(SANITIZER_LDFLAGS) $(CORE_LDFLAGS)

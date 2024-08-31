@@ -5,6 +5,7 @@
 
 #include <kernel/chainparams.h>
 
+// #include <arith_uint256.h>
 #include <chainparamsseeds.h>
 #include <consensus/amount.h>
 #include <consensus/merkle.h>
@@ -44,6 +45,23 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
     genesis.vtx.push_back(MakeTransactionRef(std::move(txNew)));
     genesis.hashPrevBlock.SetNull();
     genesis.hashMerkleRoot = BlockMerkleRoot(genesis);
+
+    // auto header = genesis.GetBlockHeader();
+    // QHashWriter writer{};
+    // arith_uint256 target;
+    // target.SetCompact(nBits);
+    // printf("%s\n", target.GetHex().c_str());
+    // uint32_t count(0);
+    // --header.nNonce;
+    // while (UintToArith256(writer.GetHash()) > target) {
+    //     ++header.nNonce;
+    //     writer << header;
+    //     ++count;
+    //     if (count % 50000 == 0)
+    //         printf("Checked %u nonces\n", count);
+    // }
+    // printf("FOUND NONCE - %u\n", header.nNonce);
+
     return genesis;
 }
 
@@ -60,7 +78,7 @@ static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesi
  */
 static CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
 {
-    const char* pszTimestamp = "The Times 03/Jan/2009 Chancellor on brink of second bailout for banks";
+    const char* pszTimestamp = "superquantum";
     const CScript genesisOutputScript = CScript() << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f") << OP_CHECKSIG;
     return CreateGenesisBlock(pszTimestamp, genesisOutputScript, nTime, nNonce, nBits, nVersion, genesisReward);
 }
@@ -97,7 +115,7 @@ public:
         consensus.nMinerConfirmationWindow = 2016;       // nPowTargetTimespan / nPowTargetSpacing
         consensus.asertAnchorParams.reset();
         consensus.nASERTHalfLife = 2 * 24 * 60 * 60; // Two days
-        
+
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
@@ -126,26 +144,27 @@ public:
         m_assumed_blockchain_size = 600;
         m_assumed_chain_state_size = 10;
 
-        genesis = CreateGenesisBlock(1231006505, 2083236893, 0x1d00ffff, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1723799348, 2084066564, 0x1e05ffff, 4, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x79e8a297f91161f86976bedd58852efade998e1913479c80f37b3b770b8db6f1"));
-        assert(genesis.hashMerkleRoot == uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        // std::cout << genesis.hashMerkleRoot.GetHex() << std::endl;
+        assert(consensus.hashGenesisBlock == uint256S("0x000001fc038038fc889b9deff88cba3a6da80d04286d261a7dd3b6f13fc05a4c"));
+        assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
 
         // Note that of those which support the service bits prefix, most only support a subset of
         // possible options.
         // This is fine at runtime as we'll fall back to using them as an addrfetch if they don't support the
         // service bits we want, but we should get them updated to support all service bits wanted by any
         // release ASAP to avoid it where possible.
-        vSeeds.emplace_back("seed.bitcoin.sipa.be.");                        // Pieter Wuille, only supports x1, x5, x9, and xd
-        vSeeds.emplace_back("dnsseed.bluematt.me.");                         // Matt Corallo, only supports x9
-        vSeeds.emplace_back("dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us."); // Luke Dashjr
-        vSeeds.emplace_back("seed.bitcoinstats.com.");                       // Christian Decker, supports x1 - xf
-        vSeeds.emplace_back("seed.bitcoin.jonasschnelli.ch.");               // Jonas Schnelli, only supports x1, x5, x9, and xd
-        vSeeds.emplace_back("seed.btc.petertodd.net.");                      // Peter Todd, only supports x1, x5, x9, and xd
-        vSeeds.emplace_back("seed.bitcoin.sprovoost.nl.");                   // Sjors Provoost
-        vSeeds.emplace_back("dnsseed.emzy.de.");                             // Stephan Oeste
-        vSeeds.emplace_back("seed.bitcoin.wiz.biz.");                        // Jason Maurice
+        // vSeeds.emplace_back("seed.bitcoin.sipa.be.");                        // Pieter Wuille, only supports x1, x5, x9, and xd
+        // vSeeds.emplace_back("dnsseed.bluematt.me.");                         // Matt Corallo, only supports x9
+        // vSeeds.emplace_back("dnsseed.bitcoin.dashjr-list-of-p2p-nodes.us."); // Luke Dashjr
+        // vSeeds.emplace_back("seed.bitcoinstats.com.");                       // Christian Decker, supports x1 - xf
+        // vSeeds.emplace_back("seed.bitcoin.jonasschnelli.ch.");               // Jonas Schnelli, only supports x1, x5, x9, and xd
+        // vSeeds.emplace_back("seed.btc.petertodd.net.");                      // Peter Todd, only supports x1, x5, x9, and xd
+        // vSeeds.emplace_back("seed.bitcoin.sprovoost.nl.");                   // Sjors Provoost
+        // vSeeds.emplace_back("dnsseed.emzy.de.");                             // Stephan Oeste
+        // vSeeds.emplace_back("seed.bitcoin.wiz.biz.");                        // Jason Maurice
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 0);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 5);
@@ -155,7 +174,7 @@ public:
 
         bech32_hrp = "bc";
 
-        vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_main), std::end(chainparams_seed_main));
+        // vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_main), std::end(chainparams_seed_main));
 
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;
@@ -220,7 +239,7 @@ public:
         consensus.nMinerConfirmationWindow = 2016;       // nPowTargetTimespan / nPowTargetSpacing
         consensus.asertAnchorParams.reset();
         consensus.nASERTHalfLife = 60 * 60; // One hour
-        
+
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
@@ -247,8 +266,8 @@ public:
         genesis = CreateGenesisBlock(1296688602, 414098458, 0x1d00ffff, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x54da64c0224fa544d68e247a5791063ddf005e8166fcab16315ef05c37a4c38d"));
-        assert(genesis.hashMerkleRoot == uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        assert(consensus.hashGenesisBlock == uint256S("0x8d3471d9e762fd548789a03e52e4c05244ccd0bc49b0aa1ee156f4ea218a0dae"));
+        assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
 
         vFixedSeeds.clear();
         vSeeds.clear();
@@ -354,8 +373,8 @@ public:
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
         consensus.nMinerConfirmationWindow = 2016;       // nPowTargetTimespan / nPowTargetSpacing
-        consensus.nASERTHalfLife = 60 * 60; // One hour
-        
+        consensus.nASERTHalfLife = 60 * 60;              // One hour
+
         consensus.MinBIP9WarningHeight = 0;
         consensus.powLimit = uint256S("00000377ae000000000000000000000000000000000000000000000000000000");
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
@@ -381,8 +400,8 @@ public:
         genesis = CreateGenesisBlock(1598918400, 52613770, 0x1e0377ae, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x5efeca0c7c290bc38287cd30a8292f72929911ac16382deb3936bca278b53252"));
-        assert(genesis.hashMerkleRoot == uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        assert(consensus.hashGenesisBlock == uint256S("0x233d3d6835b70b374362bd44b86b47688a3c90ec5a9b70ea3af8fb905566241c"));
+        assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
 
         vFixedSeeds.clear();
 
@@ -486,8 +505,8 @@ public:
         genesis = CreateGenesisBlock(1723726478, 3, 0x207ffffe, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x688a3e912f582fa20d65822bf3b334e9ec0bcaae698ee32819e3fdf191dbcd8f"));
-        assert(genesis.hashMerkleRoot == uint256S("0x4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"));
+        assert(consensus.hashGenesisBlock == uint256S("0x1026bc1ac397550a7ef728ef5a9207b5815622de9173bf5192d65b17dadfa010"));
+        assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
 
         vFixedSeeds.clear(); //!< Regtest mode doesn't have any fixed seeds.
         vSeeds.clear();

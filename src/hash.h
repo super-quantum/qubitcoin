@@ -181,6 +181,7 @@ public:
     {
         uint256 result;
         ctx.Finalize(result.begin());
+        // ctx.Reset();
         return result;
     }
 
