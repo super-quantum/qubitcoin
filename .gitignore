@@ -3,8 +3,8 @@
 *.exe
 *.pdb
 src/bitcoin
-src/bitcoind
-src/bitcoin-cli
+src/qubitcoind
+src/qubitcoin-cli
 src/bitcoin-gui
 src/bitcoin-node
 src/bitcoin-tx
