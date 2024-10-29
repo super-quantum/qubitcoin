@@ -40,16 +40,16 @@ Verify that your GPU satisfies the requirements (computing capability >= 7)
 https://developer.nvidia.com/cuda-gpus
 
 for Windows:
-(*) install WSL (Ubuntu 24.04 LTS): https://learn.microsoft.com/en-us/windows/wsl/install
-(*) install CUDA on WSL: https://docs.nvidia.com/cuda/wsl-user-guide/index.html
+* install WSL (Ubuntu 24.04 LTS): https://learn.microsoft.com/en-us/windows/wsl/install
+* install CUDA on WSL: https://docs.nvidia.com/cuda/wsl-user-guide/index.html
 _make further actions in WSL_
 
 for Linux (required Ubuntu 24.04 LTS):
-(*) install CUDA:  https://www.liberiangeek.net/2024/04/install-cuda-on-ubuntu-24-04/
+* install CUDA:  https://www.liberiangeek.net/2024/04/install-cuda-on-ubuntu-24-04/
 
 After installing CUDA:
-(*) install libzmq5 and libevent
-(*) sudo apt update
+* install libzmq5 and libevent
+ * sudo apt update
 ( *) sudo apt install -y libevent-dev
 ( *) sudo apt install -y libzmq5
 
