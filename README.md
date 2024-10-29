@@ -50,8 +50,8 @@ for Linux (required Ubuntu 24.04 LTS):
 After installing CUDA:
 * install libzmq5 and libevent
  * sudo apt update
-( *) sudo apt install -y libevent-dev
-( *) sudo apt install -y libzmq5
+ * sudo apt install -y libevent-dev
+ * sudo apt install -y libzmq5
 
 
 Bitcoin Fork
