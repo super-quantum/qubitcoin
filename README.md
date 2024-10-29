@@ -53,6 +53,23 @@ After installing CUDA:
   * sudo apt install -y libevent-dev
   * sudo apt install -y libzmq5
 
+* download the executables (qubitcoind, qubitcoin-cli, qubitcoin-miner from [superquantum](https://superquantum.io/qubitcoin.html or build your own [see instructions below])
+* locate the packages in a specified directory (e.g. ~/ or /home/username)
+  * [Windows/WSL] copy files from download folder to /home: cp /mnt/c/Users/aardp/Downloads/qubitcoin ~/
+* may need to change file format for the executables: chmod +x _file_name_ (e.g chmod +x qubitcoind)
+* run the node executable (aka bitcoin daemon) qubitcoind (from the directory where the packages are located):
+  sudo ./qubitcoind -rpcuser=test -rpcpassword=test -bind="0.0.0.0:42069" -addnode="73.47.180.210:42069" -reindex
+  _here we specified the ip address of one of the available nodes_
+* start/add a wallet (command line interface) in a separate terminal window [do it once when you create wallet for the first time]: 
+  sudo ./qubitcoin-cli -rpcuser=test -rpcpassword=test createwallet {wallet_name}
+  sudo ./qubitcoin-cli -rpcuser=test -rpcpassword=test getnewaddress
+  sudo ./qubitcoin-cli -rpcuser=test -rpcpassword=test loadwallet {wallet_name}
+* launch a miner using the wallet address acquired earlier 
+  sudo ./qubitcoin-miner --algo qhash -t 1 --url http://127.0.0.1:8332 --userpass test:test --coinbase-addr {address from previous step}
+
+After that the mining process should begin. The node and miner can be terminated by ctr+c.  
+Check peer-info: 
+  sudo ./qubitcoin-cli -rpcuser=test -rpcpassword=test getpeerinfo
 
 Bitcoin Fork
 ------------
