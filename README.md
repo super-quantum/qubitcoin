@@ -24,15 +24,35 @@ Qubitcoin
 Qubitcoin takes a mixed approach merging cryptographic hash functions with quantum computing circuits. As a part of the cycle, miners have to complete a quantum task, check the outcomes, and then use these results in the following hashing step. This setup makes sure the whole system stays secure and that it can be verified on regular computers, while also pushing for the growth and use of quantum computing resources.
 
 ![figure1](figure1.png)
-*Figure 1: Schematic of qPoW algorithm representing an extended Proof-of-Work cycle with a quantum task. The task is to compute the outputs of a circuit composed of single-qubit parameterized gates and two-qubit CNOTs applied to the neighboring qubits. At the circuit end we record for each qubit a probability of being in the state 1, then convert it into bit-string format and merge them into an output 256-bit string. The bit-string is further XOR-multiplied with the initial hash, hashed by SHA3 and checked whether it satisfies the difficulty criterion.*
+*Figure 1: Schematic of qPoW algorithm representing an extended Proof-of-Work cycle with a quantum task. The task is to compute the outputs of a circuit composed of single-qubit parameterized gates and two-qubit CNOTs applied to the neighboring qubits. At the circuit end, we record for each qubit a probability of being in the state 1, then convert it into bit-string format and merge them into an output 256-bit string. The bit-string is further XOR-multiplied with the initial hash, hashed by SHA3, and checked whether it satisfies the difficulty criterion.*
 
-Currently the qPoW hashing algorithm inside of Qubitcoin utilizes cuStateVec library from NVIDIA cuQuantum SDK to run quantum circuit simulations on GPUs. Hence, suitable versions of NVIDIA GPU driver, CUDA Toolkit, and cuQuantum itself, are required to build and/or run the full node. 
+Currently, the qPoW hashing algorithm inside of Qubitcoin utilizes cuStateVec library from NVIDIA cuQuantum SDK to run quantum circuit simulations on GPUs. Hence, suitable versions of NVIDIA GPU driver, CUDA Toolkit, and cuQuantum itself, are required to build and/or run the full node. 
 
 We use 128-bit complex floating-point numbers to maximize the precision of calculations. However, to ensure the consistency of quantum circuit computations across different backends, the final expectation values are converted to fixed-point fractional numbers. Hash functions in the qPoW algorithm are SHA256 which are imported directly from the original Bitcoin source code. As for the floating-to-fixed-point number conversions, the “fpm” open-source library is already included in the node implementation. After hashing the block data, each of the rotation gates in the quantum circuit is parameterized with 4 bit segments of the input hash. The final hashing step is performed on XOR-combination of the initial classical hash string and the string composed of concatenated Z-axis projected qubit expectation values in fixed-point notation.
 
 Our mining package utilizes cuQuantum for simulating quantum circuits, but, as mentioned in the Bring Your Own Solver section, miners can use instead other quantum simulators, or, perhaps, ordinary linear algebra libraries. In BYOS case, one needs to implement the functionality to run and measure qPoW circuits using the desired software by creating the qhash_thread_init and run_simulation functions with appropriate signatures, as detailed in the qhash-gate.h header file, and use them instead of the provided ones by adding the new source files into the cpuminer_SOURCES variable in Makefile.am in place of the qhash-custatevec.c file. It would also be required to integrate any new dependencies into the build system by supplying the necessary compiler and linker flags in Makefile.am. CUSTATEVEC_INCLUDES and CUSTATEVEC_LDFLAGS variables demonstrate how it can be done for the cuStateVec library with CUDA runtime API. After that, the miner can be built and used as usual.
 
-At the current moment, the algorithm implementation with the default cuQuantum backend is limited to running in only one CPU thread. We will work on resolving this issue in the future releases. In the meantime, it is advised to use custom solvers to achieve maximum possible hashrates.
+At the current moment, the algorithm implementation with the default cuQuantum backend can only run in one CPU thread. We will work on resolving this issue in future releases. In the meantime, it is advised to use custom solvers to achieve the maximum possible hashrates.
+
+How to start mining Qubitcoin
+-----------------------------
+Verify that your GPU satisfies the requirements (computing capability >= 7) 
+https://developer.nvidia.com/cuda-gpus
+
+for Windows:
+(*) install WSL (Ubuntu 24.04 LTS): https://learn.microsoft.com/en-us/windows/wsl/install
+(*) install CUDA on WSL: https://docs.nvidia.com/cuda/wsl-user-guide/index.html
+_make further actions in WSL_
+
+for Linux (required Ubuntu 24.04 LTS):
+(*) install CUDA:  https://www.liberiangeek.net/2024/04/install-cuda-on-ubuntu-24-04/
+
+After installing CUDA:
+(*) install libzmq5 and libevent
+(*) sudo apt update
+( *) sudo apt install -y libevent-dev
+( *) sudo apt install -y libzmq5
+
 
 Bitcoin Fork
 ------------
