@@ -104,7 +104,7 @@ public:
         consensus.BIP65Height = 388381;          // 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
         consensus.BIP66Height = 363725;          // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
         consensus.CSVHeight = 419328;            // 000000000000000004a1b34462cb8aeebd5799177f7a29cf28f2d1961716b5b5
-        consensus.SegwitHeight = 1;         // 0000000000000000001c8018d9cb3b742ef25114f27563e3fc4a1902167f9893
+        consensus.SegwitHeight = 1;              // 0000000000000000001c8018d9cb3b742ef25114f27563e3fc4a1902167f9893
         consensus.MinBIP9WarningHeight = 483840; // segwit activation height + miner confirmation window
         consensus.powLimit = uint256S("0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
@@ -144,11 +144,10 @@ public:
         m_assumed_blockchain_size = 600;
         m_assumed_chain_state_size = 10;
 
-        genesis = CreateGenesisBlock(1723799348, 2084066564, 0x1e05ffff, 4, 50 * COIN);
+        genesis = CreateGenesisBlock(1730075215, 2092524032, 0x1e05ffff, 4, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        // std::cout << genesis.hashMerkleRoot.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x000001fc038038fc889b9deff88cba3a6da80d04286d261a7dd3b6f13fc05a4c"));
+        assert(consensus.hashGenesisBlock == uint256S("0x00000021cce0cd4553ffc5545f38c6ec2696783f87a1252818f07c52bf9b362b"));
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
 
         // Note that of those which support the service bits prefix, most only support a subset of
@@ -194,8 +193,7 @@ public:
                 // {250000, uint256S("0x000000000000003887df1f29024b06fc2200b55f8af8f35453d7be294df2d214")},
                 // {279000, uint256S("0x0000000000000001ae8c72a0b0c301f67e3afca10e819efa9041e458e9bd7e40")},
                 // {295000, uint256S("0x00000000000000004d9b4ef50f0f9d686fd69db2e03af35a100370c64632a983")},
-            }
-            };
+            }};
 
         m_assumeutxo_data = {
             // TODO to be specified in a future patch.
