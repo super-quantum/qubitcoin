@@ -55,7 +55,7 @@ After installing CUDA:
   - sudo apt install -y libevent-dev
   - sudo apt install -y libzmq5
 
-- download the executables (qubitcoind, qubitcoin-cli, qubitcoin-miner from [superquantum](https://superquantum.io/qubitcoin.html or build your own [see instructions below])
+- download the executables (qubitcoind, qubitcoin-cli, qubitcoin-miner from [superquantum](https://superquantum.io/qubitcoin) or build your own [see instructions below])
 - locate the packages in a specified directory (e.g. ~/ or /home/username)
   - [Windows/WSL] copy files from download folder to /home: cp /mnt/c/Users/aardp/Downloads/qubitcoin ~/
 - may need to change file format for the executables: chmod +x _file_name_ (e.g chmod +x qubitcoind)
