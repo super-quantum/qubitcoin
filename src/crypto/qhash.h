@@ -10,6 +10,7 @@
 class QHash
 {
 private:
+    const uint32_t nTime;
     CSHA256 ctx;
     custatevecHandle_t handle; // TODO: should probably be a singleton
     cuDoubleComplex* dStateVec;
@@ -28,7 +29,7 @@ private:
 public:
     static const size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
 
-    QHash();
+    explicit QHash(uint32_t nTime);
     QHash& Write(const unsigned char* data, size_t len);
     void Finalize(unsigned char hash[OUTPUT_SIZE]);
     QHash& Reset();

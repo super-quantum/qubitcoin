@@ -27,7 +27,7 @@
 static const cuDoubleComplex matrixX[] = {
     {0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}};
 
-QHash::QHash() : ctx(), handle(), dStateVec(), extraSize(0), extra(nullptr)
+QHash::QHash(uint32_t nTime) : nTime(nTime), ctx(), handle(), dStateVec(), extraSize(0), extra(nullptr)
 {
     custatevecCreate(&handle);
 
@@ -143,18 +143,25 @@ void QHash::Finalize(unsigned char hash[OUTPUT_SIZE])
     auto hasher = CSHA256().Write(inHash.data(), inHash.size());
 
     // TODO: May be faster with a single array write
+    bool allZero = true;
     for (auto exp : exps) {
         auto fixedExp{fixedFloat{exp}.raw_value()};
         unsigned char byte;
         for (size_t i{0}; i < sizeof(fixedExp); ++i) {
             // Little endian representation
             byte = static_cast<unsigned char>(fixedExp);
+            if (byte != 0) allZero = false;
             hasher.Write(&byte, 1);
             fixedExp >>= std::numeric_limits<unsigned char>::digits;
         }
     }
 
-    hasher.Finalize(hash);
+    if (!allZero || nTime < 1753105444) {
+        hasher.Finalize(hash);
+        return;
+    }
+    for (std::size_t i = 0; i < OUTPUT_SIZE; ++i)
+        hash[i] = 255;
 }
 
 QHash& QHash::Reset()

@@ -168,6 +168,8 @@ private:
     QHash ctx;
 
 public:
+    explicit QHashWriter(uint32_t nTime): ctx(nTime) {}
+
     void write(Span<const std::byte> src)
     {
         ctx.Write(UCharCast(src.data()), src.size());

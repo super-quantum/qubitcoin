@@ -10,7 +10,7 @@
 
 uint256 CBlockHeader::GetHash() const
 {
-    return (QHashWriter{} << *this).GetHash();
+    return (QHashWriter{nTime} << *this).GetHash();
 }
 
 std::string CBlock::ToString() const
