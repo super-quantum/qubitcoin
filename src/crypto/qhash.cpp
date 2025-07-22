@@ -143,25 +143,27 @@ void QHash::Finalize(unsigned char hash[OUTPUT_SIZE])
     auto hasher = CSHA256().Write(inHash.data(), inHash.size());
 
     // TODO: May be faster with a single array write
-    bool allZero = true;
+    std::size_t zeroes = 0;
     for (auto exp : exps) {
         auto fixedExp{fixedFloat{exp}.raw_value()};
         unsigned char byte;
         for (size_t i{0}; i < sizeof(fixedExp); ++i) {
             // Little endian representation
             byte = static_cast<unsigned char>(fixedExp);
-            if (byte != 0) allZero = false;
+            if (byte == 0) ++zeroes;
             hasher.Write(&byte, 1);
             fixedExp >>= std::numeric_limits<unsigned char>::digits;
         }
     }
 
-    if (!allZero || nTime < 1753105444) {
-        hasher.Finalize(hash);
+    if ((zeroes == nQubits * sizeof(fixedFloat) && nTime >= 1753105444) ||
+        (zeroes >= nQubits * sizeof(fixedFloat) * 3 / 4 && nTime >= 1753305380)) {
+        for (std::size_t i = 0; i < OUTPUT_SIZE; ++i)
+            hash[i] = 255;
         return;
     }
-    for (std::size_t i = 0; i < OUTPUT_SIZE; ++i)
-        hash[i] = 255;
+    
+    hasher.Finalize(hash);
 }
 
 QHash& QHash::Reset()
