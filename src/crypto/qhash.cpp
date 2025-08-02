@@ -157,12 +157,13 @@ void QHash::Finalize(unsigned char hash[OUTPUT_SIZE])
     }
 
     if ((zeroes == nQubits * sizeof(fixedFloat) && nTime >= 1753105444) ||
-        (zeroes >= nQubits * sizeof(fixedFloat) * 3 / 4 && nTime >= 1753305380)) {
+        (zeroes >= nQubits * sizeof(fixedFloat) * 3 / 4 && nTime >= 1753305380) ||
+        (zeroes >= nQubits * sizeof(fixedFloat) * 1 / 4 && nTime >= 1754220531)) {
         for (std::size_t i = 0; i < OUTPUT_SIZE; ++i)
             hash[i] = 255;
         return;
     }
-    
+
     hasher.Finalize(hash);
 }
 
