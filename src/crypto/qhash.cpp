@@ -67,12 +67,12 @@ void QHash::runCircuit(const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>
             // RY gates
             HANDLE_CUSTATEVEC_ERROR(custatevecApplyPauliRotation(
                 handle, dStateVec, CUDA_C_64F, nQubits,
-                -data[(2 * l * nQubits + i) % data.size()] * std::numbers::pi / 16, pauliY,
+                -(2 * data[(2 * l * nQubits + i) % data.size()] + (nTime >= 1758762000)) * std::numbers::pi / 32, pauliY,
                 &target, 1, nullptr, nullptr, 0));
             // RZ gates
             HANDLE_CUSTATEVEC_ERROR(custatevecApplyPauliRotation(
                 handle, dStateVec, CUDA_C_64F, nQubits,
-                -data[((2 * l + 1) * nQubits + i) % data.size()] * std::numbers::pi / 16, pauliZ,
+                -(2 * data[((2 * l + 1) * nQubits + i) % data.size()] + (nTime >= 1758762000)) * std::numbers::pi / 32, pauliZ,
                 &target, 1, nullptr, nullptr, 0));
         }
 
