@@ -876,13 +876,13 @@ public:
         return TestBlockValidity(state, chainman().GetParams(), chainman().ActiveChainstate(), block, chainman().ActiveChain().Tip(), /*fCheckPOW=*/false, check_merkle_root);
     }
 
-    std::unique_ptr<CBlockTemplate> createNewBlock(const CScript& script_pub_key, bool use_mempool) override
+    std::unique_ptr<CBlockTemplate> createNewBlock(const CScript& script_pub_key, bool use_mempool, uint8_t task_id) override
     {
         BlockAssembler::Options options;
         ApplyArgsManOptions(gArgs, options);
 
         LOCK(::cs_main);
-        return BlockAssembler{chainman().ActiveChainstate(), use_mempool ? context()->mempool.get() : nullptr, options}.CreateNewBlock(script_pub_key);
+        return BlockAssembler{chainman().ActiveChainstate(), use_mempool ? context()->mempool.get() : nullptr, options}.CreateNewBlock(script_pub_key, task_id);
     }
 
     NodeContext* context() override { return &m_node; }

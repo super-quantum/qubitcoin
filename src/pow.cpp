@@ -7,84 +7,34 @@
 
 #include <arith_uint256.h>
 #include <chain.h>
+#include <consensus/params.h>
+#include <pow/tasks.h>
 #include <primitives/block.h>
 #include <uint256.h>
 
-#include <atomic>
-
-static std::atomic<const CBlockIndex*> cachedAnchor{nullptr};
-
-void ResetASERTAnchorBlockCache() noexcept
-{
-    cachedAnchor = nullptr;
-}
-
-const CBlockIndex* GetASERTAnchorBlockCache() noexcept
-{
-    return cachedAnchor.load();
-}
-
-/**
- * Returns a pointer to the anchor block used for ASERT.
- * As anchor we use the first block for which IsAxionEnabled() returns true.
- * This block happens to be the last block which was mined under the old DAA
- * rules.
- *
- * This function is meant to be removed some time after the upgrade, once
- * the anchor block is deeply buried, and behind a hard-coded checkpoint.
- *
- * Preconditions: - pindex must not be nullptr
- *                - pindex must satisfy: IsAxionEnabled(params, pindex) == true
- * Postcondition: Returns a pointer to the first (lowest) block for which
- *                IsAxionEnabled is true, and for which IsAxionEnabled(pprev)
- *                is false (or for which pprev is nullptr). The return value may
- *                be pindex itself.
- */
-static const CBlockIndex* GetASERTAnchorBlock(const CBlockIndex* const pindex,
-                                              const Consensus::Params& params)
-{
-    assert(pindex);
-
-    // - We check if we have a cached result, and if we do and it is really the
-    //   ancestor of pindex, then we return it.
-    //
-    // - If we do not or if the cached result is not the ancestor of pindex,
-    //   then we proceed with the more expensive walk back to find the ASERT
-    //   anchor block.
-    //
-    // CBlockIndex::GetAncestor() is reasonably efficient; it uses CBlockIndex::pskip
-    // Note that if pindex == cachedAnchor, GetAncestor() here will return cachedAnchor,
-    // which is what we want.
-    const CBlockIndex* lastCached = cachedAnchor.load();
-    if (lastCached && pindex->GetAncestor(lastCached->nHeight) == lastCached)
-        return lastCached;
-
-    // Slow path: walk back until the genesis block
-    const CBlockIndex* anchor = pindex->GetAncestor(0);
-    cachedAnchor = anchor;
-    return anchor;
-}
-
-
 /**
  * Compute the next required proof of work using an absolutely scheduled
- * exponentially weighted target (ASERT).
+ * exponentially weighted target (ASERT) for a specific task.
  *
- * With ASERT, we define an ideal schedule for block issuance (e.g. 1 block every 600 seconds), and we calculate the
- * difficulty based on how far the most recent block's timestamp is ahead of or behind that schedule.
- * We set our targets (difficulty) exponentially. For every [nHalfLife] seconds ahead of or behind schedule we get, we
- * double or halve the difficulty.
+ * With per-task ASERT, each task maintains its own difficulty timeline. We use
+ * cumulative ideal spacing (nTaskSpacingSum) rather than height * constant_spacing
+ * to handle the varying number of active tasks over time.
+ *
+ * The difficulty adjusts exponentially based on how far ahead or behind schedule
+ * the task-specific chain is. For every nHalfLife seconds of deviation, we double
+ * or halve the difficulty.
  */
 static uint32_t GetNextASERTWorkRequired(const CBlockIndex* pindexPrev,
                                          const CBlockHeader* pblock,
                                          const Consensus::Params& params,
-                                         const Consensus::Params::ASERTAnchor& anchorParams) noexcept
+                                         uint8_t task_id) noexcept
 {
-    // This cannot handle the genesis block and early blocks in general.
+    // Cannot handle genesis block
     assert(pindexPrev != nullptr);
-
-    // We make no further assumptions other than the height of the prev block must be >= that of the anchor block.
-    assert(pindexPrev->nHeight >= anchorParams.nHeight);
+    
+    auto* taskDef = const_cast<Consensus::Params::PowTaskDefinition*>(
+        LookupTaskDefinition(params, task_id));
+    assert(taskDef);
 
     // Special difficulty rule for testnet
     // If the new block's timestamp is more than 2 * 10 minutes then allow
@@ -96,70 +46,70 @@ static uint32_t GetNextASERTWorkRequired(const CBlockIndex* pindexPrev,
     }
 
     const arith_uint256 powLimit = UintToArith256(params.powLimit);
-
-    // For nTimeDiff calculation, the timestamp of the parent to the anchor block is used,
-    // as per the absolute formulation of ASERT.
-    // This is somewhat counterintuitive since it is referred to as the anchor timestamp, but
-    // as per the formula the timestamp of block M-1 must be used if the anchor is M.
-    // assert(pindexPrev->pprev != nullptr);
-
-    const arith_uint256 refBlockTarget = arith_uint256().SetCompact(anchorParams.nBits);
-
-    // Time difference is from anchor block's parent block's timestamp
-    const int64_t nTimeDiff = pindexPrev->GetBlockTime() - anchorParams.nPrevBlockTime;
-    // Height difference is from current block to anchor block
-    const int nHeightDiff = pindexPrev->nHeight - anchorParams.nHeight;
-
-    // Do the actual target adaptation calculation in separate
-    // CalculateASERT() function
+    
+    // Find the most recent block that solved this same task
+    const CBlockIndex* pindexPrevTask = FindPreviousTaskBlock(pindexPrev, task_id);
+    
+    // If no previous block solved this task, we're at the anchor itself
+    // In this case, use the initial difficulty from the task definition
+    if (!pindexPrevTask) {
+        return taskDef->nInitialBits;
+    }
+    
+    // Get or compute the anchor timestamp (cached in task definition)
+    if (!taskDef->anchor_time.has_value()) {
+        // First time computing difficulty for this task - find and cache anchor timestamp
+        const CBlockIndex* pindexAnchor = nullptr;
+        
+        if (task_id == POW_DEFAULT_TASK_ID) {
+            // For default task, anchor is genesis
+            pindexAnchor = pindexPrev->GetAncestor(0);
+        } else {
+            // For other tasks, anchor is at activation_height
+            pindexAnchor = pindexPrev->GetAncestor(taskDef->activation_height);
+        }
+        
+        assert(pindexAnchor);
+        
+        // Cache the anchor timestamp (use parent's time, or anchor's own time if genesis)
+        taskDef->anchor_time = pindexAnchor->pprev ? 
+                               pindexAnchor->pprev->GetBlockTime() : 
+                               pindexAnchor->GetBlockTime();
+    }
+    
+    const int64_t anchorTime = *taskDef->anchor_time;
+    
+    // Anchor target is the initial difficulty for this task
+    const arith_uint256 refBlockTarget = arith_uint256().SetCompact(taskDef->nInitialBits);
+    
+    // Calculate time difference from anchor to current block parent
+    const int64_t nTimeDiff = pindexPrev->GetBlockTime() - anchorTime;
+    
+    // Calculate ideal time using cumulative spacing sums:
+    // - Expected spacing from anchor to previous task block = pindexPrevTask->nTaskSpacingSum
+    // - We need to add the spacing for the new block we're computing difficulty for
+    // - IMPORTANT: Using the spacing at pindexPrevTask's height, not current height
+    //   This keeps difficulty stable for a task even if other tasks activate/deactivate
+    //   between this task's blocks.
+    const int64_t blockSpacing = TargetSpacingPerTaskAtHeight(params, pindexPrevTask->nHeight + 1);
+    const int64_t nIdealTimeDiff = pindexPrevTask->nTaskSpacingSum + blockSpacing;
+    
+    // Calculate ASERT target adjustment
     arith_uint256 nextTarget = CalculateASERT(refBlockTarget,
-                                              params.nPowTargetSpacing,
                                               nTimeDiff,
-                                              nHeightDiff,
+                                              nIdealTimeDiff,
                                               powLimit,
                                               params.nASERTHalfLife);
-
-    // CalculateASERT() already clamps to powLimit.
+    
     return nextTarget.GetCompact();
-}
-
-uint32_t GetNextASERTWorkRequired(const CBlockIndex* pindexPrev,
-                                  const CBlockHeader* pblock,
-                                  const Consensus::Params& params,
-                                  const CBlockIndex* pindexAnchorBlock) noexcept
-{
-    // If hard-coded params exist for this chain, we use those
-    if (params.asertAnchorParams) {
-        return GetNextASERTWorkRequired(pindexPrev, pblock, params, *params.asertAnchorParams);
-    }
-    // Otherwise, caller should have specified the anchor block (chain where it has not yet
-    // activated such as ScaleNet).
-    //
-    // Anchor block is the block on which all ASERT scheduling calculations are based.
-    // It too must exist, and it must have a valid parent.
-    assert(pindexAnchorBlock != nullptr);
-
-
-    // Note: time difference is to parent of anchor block (or to anchor block itself iff anchor is genesis).
-    //       (according to absolute formulation of ASERT)
-    const auto anchorTime = pindexAnchorBlock->pprev ? pindexAnchorBlock->pprev->GetBlockTime() : pindexAnchorBlock->GetBlockTime();
-
-    const Consensus::Params::ASERTAnchor anchorParams{
-        pindexAnchorBlock->nHeight,
-        pindexAnchorBlock->nBits,
-        anchorTime};
-
-    // Call the overloaded function that does the actual calculation using anchorParams
-    return GetNextASERTWorkRequired(pindexPrev, pblock, params, anchorParams);
 }
 
 
 // ASERT calculation function.
 // Clamps to powLimit.
 arith_uint256 CalculateASERT(const arith_uint256& refTarget,
-                             const int64_t nPowTargetSpacing,
                              const int64_t nTimeDiff,
-                             const int64_t nHeightDiff,
+                             const int64_t nIdealTimeDiff,
                              const arith_uint256& powLimit,
                              const int64_t nHalfLife) noexcept
 {
@@ -170,18 +120,14 @@ arith_uint256 CalculateASERT(const arith_uint256& refTarget,
     // overflows easily. 32 leading zero bits is more than enough.
     // assert((powLimit >> 224) == 0);
 
-    // Height diff should NOT be negative.
-    assert(nHeightDiff >= 0);
-
-    // It will be helpful when reading what follows, to remember that
-    // nextTarget is adapted from anchor block target value.
+    assert(nIdealTimeDiff >= 0);
 
     // Ultimately, we want to approximate the following ASERT formula, using only integer (fixed-point) math:
-    //     new_target = old_target * 2^((blocks_time - IDEAL_BLOCK_TIME * (height_diff + 1)) / nHalfLife)
+    //     new_target = old_target * 2^((actual_time - ideal_time) / nHalfLife)
 
     // First, we'll calculate the exponent:
-    assert(llabs(nTimeDiff - nPowTargetSpacing * nHeightDiff) < (1ll << (63 - 16)));
-    const int64_t exponent = ((nTimeDiff - nPowTargetSpacing * (nHeightDiff + 1)) * 65536) / nHalfLife;
+    assert(llabs(nTimeDiff - nIdealTimeDiff) < (1ll << (63 - 16)));
+    const int64_t exponent = ((nTimeDiff - nIdealTimeDiff) * 65536) / nHalfLife;
 
     // Next, we use the 2^x = 2 * 2^(x-1) identity to shift our exponent into the [0, 1) interval.
     // The truncated exponent tells us how many shifts we need to do
@@ -249,12 +195,11 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
         return pindexLast->nBits;
     }
 
-    const CBlockIndex* panchorBlock = nullptr;
-    if (!params.asertAnchorParams) {
-        // No hard-coded anchor params -- find the anchor block dynamically
-        panchorBlock = GetASERTAnchorBlock(pindexLast, params);
-    }
-    auto nextWork = GetNextASERTWorkRequired(pindexLast, pblock, params, panchorBlock);
+    // Extract the task ID from the block header
+    const uint8_t task_id = DecodeTaskId(pblock->nVersion);
+    
+    // Calculate difficulty for this specific task
+    auto nextWork = GetNextASERTWorkRequired(pindexLast, pblock, params, task_id);
     return nextWork;
 }
 

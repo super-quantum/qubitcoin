@@ -17,6 +17,14 @@ The version that we are deploying here contains a quantum challenge that involve
 
 The beauty of this system lies in its potential to create a large-scale, distributed network of competing quantum simulators. Each miner taking part in a qPoW-based blockchain would need to operate a quantum simulator to stay in the race. This will result in a huge boost in the combined strength and complexity of the world’s quantum simulation abilities. As miners fine-tune their quantum simulators to get ahead in mining, they would be expanding the limits of quantum simulation algorithms and hardware. The rivalry in cryptocurrency mining will spark advancements in simulation precision, efficiency, and growth potential. Moreover, qPoW has the potential to act as a standard benchmark for comparing the performance of quantum hardware and simulators.
 
+## Superdense Consensus
+
+Superdense Consensus is Qubitcoin's multi-task proof-of-work architecture that enables multiple independent PoW challenges to coexist within the same blockchain. Each task is identified by an 8-bit ID encoded in bits 20–27 of the block version field, allowing up to 256 distinct proof-of-work tasks to exist on the same chain. Tasks are defined in the consensus parameters with individual activation heights, initial difficulty targets, and optional deactivation heights, providing a flexible framework for introducing new computational challenges over time.
+
+The difficulty adjustment for each task operates independently using the ASERT algorithm, with per-task cumulative spacing tracked in block index entries. This ensures that tasks stay equally difficult and that fluctuations in hashrate for one task do not affect the difficulty of others. Mining RPCs such as `generatetoaddress`, `getblocktemplate`, and `getdifficulty` accept an optional `task_id` parameter, enabling miners to target specific tasks. The target block spacing is dynamically scaled based on the number of active tasks at any given height, maintaining consistent overall block production.
+
+**Next steps:** The task system is undergoing continued development and testing. Upcoming work includes comprehensive unit and integration tests for the task lifecycle, difficulty adjustment, and RPC extensions. Future enhancements will also introduce support for additional task-specific PoW data in block headers to accommodate more complex PoW requirements.
+
 ## Qubitcoin
 
 Qubitcoin takes a mixed approach merging cryptographic hash functions with quantum computing circuits. As a part of the cycle, miners have to complete a quantum task, check the outcomes, and then use these results in the following hashing step. This setup makes sure the whole system stays secure and that it can be verified on regular computers, while also pushing for the growth and use of quantum computing resources.

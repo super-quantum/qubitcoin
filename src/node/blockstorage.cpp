@@ -17,6 +17,7 @@
 #include <kernel/notifications_interface.h>
 #include <logging.h>
 #include <pow.h>
+#include <pow/tasks.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <reverse_iterator.h>
@@ -130,8 +131,15 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
 
-                if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits, consensusParams)) {
-                    LogError("%s: CheckProofOfWork failed: %s\n", __func__, pindexNew->ToString());
+                CBlockHeader header;
+                header.nVersion = diskindex.nVersion;
+                header.hashPrevBlock = diskindex.hashPrev;
+                header.hashMerkleRoot = diskindex.hashMerkleRoot;
+                header.nTime = diskindex.nTime;
+                header.nBits = diskindex.nBits;
+                header.nNonce = diskindex.nNonce;
+                if (!CheckTaskProofOfWork(header, consensusParams)) {
+                    LogError("%s: CheckTaskProofOfWork failed: %s\n", __func__, pindexNew->ToString());
                     return false;
                 }
 
@@ -222,6 +230,7 @@ CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block, CBlockInde
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
         pindexNew->BuildSkip();
     }
+    PopulateBlockTaskData(*pindexNew, GetConsensus());
     pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
     pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
@@ -437,6 +446,7 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
             return false;
         }
         previous_index = pindex;
+        PopulateBlockTaskData(*pindex, GetConsensus());
         pindex->nChainWork = (pindex->pprev ? pindex->pprev->nChainWork : 0) + GetBlockProof(*pindex);
         pindex->nTimeMax = (pindex->pprev ? std::max(pindex->pprev->nTimeMax, pindex->nTime) : pindex->nTime);
 
@@ -1068,7 +1078,7 @@ bool BlockManager::ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos) cons
     }
 
     // Check the header
-    if (!CheckProofOfWork(block.GetHash(), block.nBits, GetConsensus())) {
+    if (!CheckTaskProofOfWork(block, GetConsensus())) {
         LogError("ReadBlockFromDisk: Errors in block header at %s\n", pos.ToString());
         return false;
     }

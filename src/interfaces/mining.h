@@ -7,6 +7,7 @@
 
 #include <optional>
 #include <uint256.h>
+#include <pow/tasks.h>
 
 namespace node {
 struct CBlockTemplate;
@@ -41,9 +42,10 @@ public:
      *
      * @param[in] script_pub_key the coinbase output
      * @param[in] use_mempool set false to omit mempool transactions
+     * @param[in] task_id the PoW task ID to encode in the block (defaults to POW_DEFAULT_TASK_ID)
      * @returns a block template
      */
-    virtual std::unique_ptr<node::CBlockTemplate> createNewBlock(const CScript& script_pub_key, bool use_mempool = true) = 0;
+    virtual std::unique_ptr<node::CBlockTemplate> createNewBlock(const CScript& script_pub_key, bool use_mempool = true, uint8_t task_id = POW_DEFAULT_TASK_ID) = 0;
     /**
      * Processes new block. A valid new block is automatically relayed to peers.
      *

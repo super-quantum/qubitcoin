@@ -23,6 +23,7 @@
 #include <node/miner.h>
 #include <node/warnings.h>
 #include <pow.h>
+#include <pow/tasks.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
 #include <rpc/server.h>
@@ -134,7 +135,7 @@ static bool GenerateBlock(ChainstateManager& chainman, Mining& miner, CBlock& bl
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
-    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(block.GetHash(), block.nBits, chainman.GetConsensus()) && !chainman.m_interrupt) {
+    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckTaskProofOfWork(block, chainman.GetConsensus()) && !chainman.m_interrupt) {
         ++block.nNonce;
         --max_tries;
     }
@@ -156,11 +157,29 @@ static bool GenerateBlock(ChainstateManager& chainman, Mining& miner, CBlock& bl
     return true;
 }
 
-static UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries)
+static UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_script, int nGenerate, uint64_t nMaxTries, uint8_t task_id = POW_DEFAULT_TASK_ID)
 {
+    const Consensus::Params& consensusParams = chainman.GetConsensus();
+
     UniValue blockHashes(UniValue::VARR);
     while (nGenerate > 0 && !chainman.m_interrupt) {
-        std::unique_ptr<CBlockTemplate> pblocktemplate(miner.createNewBlock(coinbase_script));
+        int next_height;
+        {
+            LOCK(cs_main);
+            next_height = chainman.ActiveChain().Height() + 1;
+        }
+
+        // Validate that the task is active at the next block height
+        if (!IsTaskActive(consensusParams, task_id, next_height)) {
+            const auto* taskDef = LookupTaskDefinition(consensusParams, task_id);
+            if (!taskDef) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d does not exist", task_id));
+            } else {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d (%s) is not active at height %d", task_id, taskDef->name, next_height));
+            }
+        }
+
+        std::unique_ptr<CBlockTemplate> pblocktemplate(miner.createNewBlock(coinbase_script, true, task_id));
         if (!pblocktemplate.get())
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
 
@@ -220,6 +239,7 @@ static RPCHelpMan generatetodescriptor()
             {"num_blocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated."},
             {"descriptor", RPCArg::Type::STR, RPCArg::Optional::NO, "The descriptor to send the newly generated bitcoin to."},
             {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
+            {"task_id", RPCArg::Type::NUM, RPCArg::Default{POW_DEFAULT_TASK_ID}, "The PoW task ID to mine (0-255). Defaults to the default task (qhash)."},
         },
         RPCResult{
             RPCResult::Type::ARR, "", "hashes of blocks generated",
@@ -233,6 +253,11 @@ static RPCHelpMan generatetodescriptor()
 {
     const auto num_blocks{self.Arg<int>("num_blocks")};
     const auto max_tries{self.Arg<uint64_t>("maxtries")};
+    const auto task_id_int{self.Arg<int>("task_id")};
+    if (task_id_int < 0 || task_id_int > 255) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "task_id must be between 0 and 255");
+    }
+    const auto task_id = static_cast<uint8_t>(task_id_int);
 
     CScript coinbase_script;
     std::string error;
@@ -244,7 +269,7 @@ static RPCHelpMan generatetodescriptor()
     Mining& miner = EnsureMining(node);
     ChainstateManager& chainman = EnsureChainman(node);
 
-    return generateBlocks(chainman, miner, coinbase_script, num_blocks, max_tries);
+    return generateBlocks(chainman, miner, coinbase_script, num_blocks, max_tries, task_id);
 },
     };
 }
@@ -264,6 +289,7 @@ static RPCHelpMan generatetoaddress()
              {"nblocks", RPCArg::Type::NUM, RPCArg::Optional::NO, "How many blocks are generated."},
              {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The address to send the newly generated bitcoin to."},
              {"maxtries", RPCArg::Type::NUM, RPCArg::Default{DEFAULT_MAX_TRIES}, "How many iterations to try."},
+            {"task_id", RPCArg::Type::NUM, RPCArg::Default{POW_DEFAULT_TASK_ID}, "The PoW task ID to mine (0-255). Defaults to the default task (qhash)."},
          },
          RPCResult{
              RPCResult::Type::ARR, "", "hashes of blocks generated",
@@ -280,6 +306,11 @@ static RPCHelpMan generatetoaddress()
 {
     const int num_blocks{request.params[0].getInt<int>()};
     const uint64_t max_tries{request.params[2].isNull() ? DEFAULT_MAX_TRIES : request.params[2].getInt<int>()};
+    const auto task_id_int{self.Arg<int>("task_id")};
+    if (task_id_int < 0 || task_id_int > 255) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "task_id must be between 0 and 255");
+    }
+    const auto task_id = static_cast<uint8_t>(task_id_int);
 
     CTxDestination destination = DecodeDestination(request.params[1].get_str());
     if (!IsValidDestination(destination)) {
@@ -292,7 +323,7 @@ static RPCHelpMan generatetoaddress()
 
     CScript coinbase_script = GetScriptForDestination(destination);
 
-    return generateBlocks(chainman, miner, coinbase_script, num_blocks, max_tries);
+    return generateBlocks(chainman, miner, coinbase_script, num_blocks, max_tries, task_id);
 },
     };
 }
@@ -311,6 +342,7 @@ static RPCHelpMan generateblock()
                 },
             },
             {"submit", RPCArg::Type::BOOL, RPCArg::Default{true}, "Whether to submit the block before the RPC call returns or to return it as hex."},
+            {"task_id", RPCArg::Type::NUM, RPCArg::Default{POW_DEFAULT_TASK_ID}, "The PoW task ID to mine (0-255). Defaults to the default task (qhash)."},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -367,13 +399,32 @@ static RPCHelpMan generateblock()
     }
 
     const bool process_new_block{request.params[2].isNull() ? true : request.params[2].get_bool()};
+    
+    const auto task_id_int{self.Arg<int>("task_id")};
+    if (task_id_int < 0 || task_id_int > 255) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "task_id must be between 0 and 255");
+    }
+    const auto task_id = static_cast<uint8_t>(task_id_int);
+    
     CBlock block;
 
     ChainstateManager& chainman = EnsureChainman(node);
+    const Consensus::Params& consensusParams = chainman.GetConsensus();
     {
         LOCK(cs_main);
 
-        std::unique_ptr<CBlockTemplate> blocktemplate{miner.createNewBlock(coinbase_script, /*use_mempool=*/false)};
+        // Validate that the task is active at the next block height
+        const int next_height = chainman.ActiveChain().Height() + 1;
+        if (!IsTaskActive(consensusParams, task_id, next_height)) {
+            const auto* taskDef = LookupTaskDefinition(consensusParams, task_id);
+            if (!taskDef) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d does not exist", task_id));
+            } else {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d (%s) is not active at height %d", task_id, taskDef->name, next_height));
+            }
+        }
+
+        std::unique_ptr<CBlockTemplate> blocktemplate{miner.createNewBlock(coinbase_script, /*use_mempool=*/false, task_id)};
         if (!blocktemplate) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Couldn't create new block");
         }
@@ -425,10 +476,22 @@ static RPCHelpMan getmininginfo()
                         {RPCResult::Type::NUM, "blocks", "The current block"},
                         {RPCResult::Type::NUM, "currentblockweight", /*optional=*/true, "The block weight of the last assembled block (only present if a block was ever assembled)"},
                         {RPCResult::Type::NUM, "currentblocktx", /*optional=*/true, "The number of block transactions of the last assembled block (only present if a block was ever assembled)"},
-                        {RPCResult::Type::NUM, "difficulty", "The current difficulty"},
+                        {RPCResult::Type::NUM, "difficulty", "The current difficulty for the default task"},
                         {RPCResult::Type::NUM, "networkhashps", "The network hashes per second"},
                         {RPCResult::Type::NUM, "pooledtx", "The size of the mempool"},
                         {RPCResult::Type::STR, "chain", "current network name (main, test, signet, regtest)"},
+                        {RPCResult::Type::ARR, "tasks", "information about each PoW task",
+                        {
+                            {RPCResult::Type::OBJ, "", "",
+                            {
+                                {RPCResult::Type::NUM, "id", "The task ID"},
+                                {RPCResult::Type::STR, "name", "The task name"},
+                                {RPCResult::Type::NUM, "difficulty", "The current difficulty for this task"},
+                                {RPCResult::Type::BOOL, "active", "Whether this task is currently active"},
+                                {RPCResult::Type::NUM, "activation_height", "The height at which this task activates"},
+                                {RPCResult::Type::NUM, "deactivation_height", /*optional=*/true, "The height at which this task deactivates (if set)"},
+                            }},
+                        }},
                         (IsDeprecatedRPCEnabled("warnings") ?
                             RPCResult{RPCResult::Type::STR, "warnings", "any network and blockchain warnings (DEPRECATED)"} :
                             RPCResult{RPCResult::Type::ARR, "warnings", "any network and blockchain warnings (run with `-deprecatedrpc=warnings` to return the latest warning as a single string)",
@@ -449,15 +512,36 @@ static RPCHelpMan getmininginfo()
     ChainstateManager& chainman = EnsureChainman(node);
     LOCK(cs_main);
     const CChain& active_chain = chainman.ActiveChain();
+    const Consensus::Params& consensusParams = chainman.GetParams().GetConsensus();
+    const CBlockIndex *tip = CHECK_NONFATAL(active_chain.Tip());
+    const int next_height = tip->nHeight + 1;
 
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("blocks",           active_chain.Height());
     if (BlockAssembler::m_last_block_weight) obj.pushKV("currentblockweight", *BlockAssembler::m_last_block_weight);
     if (BlockAssembler::m_last_block_num_txs) obj.pushKV("currentblocktx", *BlockAssembler::m_last_block_num_txs);
-    obj.pushKV("difficulty", GetDifficulty(*CHECK_NONFATAL(active_chain.Tip())));
+    obj.pushKV("difficulty", GetDifficulty(*tip));
+    
     obj.pushKV("networkhashps",    getnetworkhashps().HandleRequest(request));
     obj.pushKV("pooledtx",         (uint64_t)mempool.size());
     obj.pushKV("chain", chainman.GetParams().GetChainTypeString());
+
+    UniValue tasks(UniValue::VARR);
+    for (const auto& [task_id, taskDef] : consensusParams.powTasks) {
+        UniValue task_info(UniValue::VOBJ);
+        task_info.pushKV("id", (int)task_id);
+        task_info.pushKV("name", taskDef.name);
+        task_info.pushKV("difficulty", GetDifficulty(*FindPreviousTaskBlock(tip, task_id)));
+        task_info.pushKV("active", IsTaskActive(consensusParams, task_id, next_height));
+        task_info.pushKV("activation_height", taskDef.activation_height);
+        if (taskDef.deactivation_height) {
+            task_info.pushKV("deactivation_height", *taskDef.deactivation_height);
+        }
+        
+        tasks.push_back(std::move(task_info));
+    }
+    obj.pushKV("tasks", std::move(tasks));
+
     obj.pushKV("warnings", node::GetWarningsForRpc(*CHECK_NONFATAL(node.warnings), IsDeprecatedRPCEnabled("warnings")));
     return obj;
 },
@@ -595,6 +679,7 @@ static RPCHelpMan getblocktemplate()
                 }},
                 {"longpollid", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "delay processing request until the result would vary significantly from the \"longpollid\" of a prior template"},
                 {"data", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "proposed block data to check, encoded in hexadecimal; valid only for mode=\"proposal\""},
+                {"task_id", RPCArg::Type::NUM, RPCArg::Default{POW_DEFAULT_TASK_ID}, "The PoW task ID to mine (0-255). Defaults to the default task (qhash)."},
             },
             },
         },
@@ -653,6 +738,8 @@ static RPCHelpMan getblocktemplate()
                 {RPCResult::Type::NUM_TIME, "curtime", "current timestamp in " + UNIX_EPOCH_TIME},
                 {RPCResult::Type::STR, "bits", "compressed target of next block"},
                 {RPCResult::Type::NUM, "height", "The height of the next block"},
+                {RPCResult::Type::NUM, "task_id", "The PoW task ID for this block template"},
+                {RPCResult::Type::STR, "task_name", "The name of the PoW task"},
                 {RPCResult::Type::STR_HEX, "signet_challenge", /*optional=*/true, "Only on signet"},
                 {RPCResult::Type::STR_HEX, "default_witness_commitment", /*optional=*/true, "a valid witness commitment for the unmodified block template"},
             }},
@@ -667,6 +754,7 @@ static RPCHelpMan getblocktemplate()
     ChainstateManager& chainman = EnsureChainman(node);
     Mining& miner = EnsureMining(node);
     LOCK(cs_main);
+    const Consensus::Params& consensusParams = chainman.GetParams().GetConsensus();
     std::optional<uint256> maybe_tip{miner.getTipHash()};
     CHECK_NONFATAL(maybe_tip);
     uint256 tip{maybe_tip.value()};
@@ -674,6 +762,7 @@ static RPCHelpMan getblocktemplate()
     std::string strMode = "template";
     UniValue lpval = NullUniValue;
     std::set<std::string> setClientRules;
+    uint8_t task_id = POW_DEFAULT_TASK_ID;
     if (!request.params[0].isNull())
     {
         const UniValue& oparam = request.params[0].get_obj();
@@ -687,6 +776,25 @@ static RPCHelpMan getblocktemplate()
         else
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid mode");
         lpval = oparam.find_value("longpollid");
+
+        const UniValue& taskval = oparam.find_value("task_id");
+        
+        const int task_id_int = taskval.getInt<int>();
+        if (task_id_int < 0 || task_id_int > 255) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "task_id must be between 0 and 255");
+        }
+        task_id = static_cast<uint8_t>(task_id_int);
+
+        // Validate that the task exists and is active at next height
+        const int next_height = chainman.ActiveChain().Height() + 1;
+        if (!IsTaskActive(consensusParams, task_id, next_height)) {
+            const auto* taskDef = LookupTaskDefinition(consensusParams, task_id);
+            if (!taskDef) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d does not exist", task_id));
+            } else {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d (%s) is not active at height %d", task_id, taskDef->name, next_height));
+            }
+        }
 
         if (strMode == "proposal")
         {
@@ -793,8 +901,6 @@ static RPCHelpMan getblocktemplate()
         // TODO: Maybe recheck connections/IBD and (if something wrong) send an expires-immediately template to stop miners?
     }
 
-    const Consensus::Params& consensusParams = chainman.GetParams().GetConsensus();
-
     // GBT must be called with 'signet' set in the rules for signet chains
     if (consensusParams.signet_blocks && setClientRules.count("signet") != 1) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "getblocktemplate must be called with the signet rule set (call with {\"rules\": [\"segwit\", \"signet\"]})");
@@ -809,8 +915,10 @@ static RPCHelpMan getblocktemplate()
     static CBlockIndex* pindexPrev;
     static int64_t time_start;
     static std::unique_ptr<CBlockTemplate> pblocktemplate;
+    static uint8_t cached_task_id;
     if (!pindexPrev || pindexPrev->GetBlockHash() != tip ||
-        (miner.getTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - time_start > 5))
+        (miner.getTransactionsUpdated() != nTransactionsUpdatedLast && GetTime() - time_start > 5) ||
+        cached_task_id != task_id)
     {
         // Clear pindexPrev so future calls make a new block, despite any failures from here on
         pindexPrev = nullptr;
@@ -822,13 +930,14 @@ static RPCHelpMan getblocktemplate()
 
         // Create new block
         CScript scriptDummy = CScript() << OP_TRUE;
-        pblocktemplate = miner.createNewBlock(scriptDummy);
+        pblocktemplate = miner.createNewBlock(scriptDummy, true, task_id);
         if (!pblocktemplate) {
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
         }
 
         // Need to update only after we know createNewBlock succeeded
         pindexPrev = pindexPrevNew;
+        cached_task_id = task_id;
     }
     CHECK_NONFATAL(pindexPrev);
     CBlock* pblock = &pblocktemplate->block; // pointer for convenience
@@ -971,6 +1080,10 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("curtime", pblock->GetBlockTime());
     result.pushKV("bits", strprintf("%08x", pblock->nBits));
     result.pushKV("height", (int64_t)(pindexPrev->nHeight+1));
+
+    result.pushKV("task_id", (int)task_id);
+    const auto* taskDef = LookupTaskDefinition(consensusParams, task_id);
+    result.pushKV("task_name", taskDef->name);
 
     if (consensusParams.signet_blocks) {
         result.pushKV("signet_challenge", HexStr(consensusParams.signet_challenge));

@@ -458,6 +458,7 @@ libbitcoin_node_a_SOURCES = \
   policy/rbf.cpp \
   policy/settings.cpp \
   pow.cpp \
+  pow/tasks.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
   rpc/fees.cpp \
@@ -968,6 +969,7 @@ libbitcoinkernel_la_SOURCES = \
   policy/rbf.cpp \
   policy/settings.cpp \
   pow.cpp \
+  pow/tasks.cpp \
   primitives/block.cpp \
   primitives/transaction.cpp \
   pubkey.cpp \

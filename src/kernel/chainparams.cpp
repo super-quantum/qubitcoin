@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
+#include <optional>
 
 static CBlock CreateGenesisBlock(const char* pszTimestamp, const CScript& genesisOutputScript, uint32_t nTime, uint32_t nNonce, uint32_t nBits, int32_t nVersion, const CAmount& genesisReward)
 {
@@ -113,8 +114,18 @@ public:
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1815; // 90% of 2016
         consensus.nMinerConfirmationWindow = 2016;       // nPowTargetTimespan / nPowTargetSpacing
-        consensus.asertAnchorParams.reset();
         consensus.nASERTHalfLife = 2 * 24 * 60 * 60; // Two days
+
+        Consensus::Params::PowTaskDefinition default_task{
+            .id = 0,
+            .name = "qhash",
+            .activation_height = 0,
+            .deactivation_height = std::nullopt,
+            .nInitialBits = 0x1e05ffff,
+            .anchor_time = std::nullopt
+        };
+        consensus.powTasks.clear();
+        consensus.powTasks.emplace(default_task.id, default_task);
 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
@@ -149,6 +160,7 @@ public:
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
         assert(consensus.hashGenesisBlock == uint256S("0x00000021cce0cd4553ffc5545f38c6ec2696783f87a1252818f07c52bf9b362b"));
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
+        assert(genesis.nBits == default_task.nInitialBits);
 
         // Note that of those which support the service bits prefix, most only support a subset of
         // possible options.
@@ -237,8 +249,18 @@ public:
         consensus.fPowNoRetargeting = false;
         consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
         consensus.nMinerConfirmationWindow = 2016;       // nPowTargetTimespan / nPowTargetSpacing
-        consensus.asertAnchorParams.reset();
         consensus.nASERTHalfLife = 60 * 60; // One hour
+
+        Consensus::Params::PowTaskDefinition default_task{
+            .id = 0,
+            .name = "qhash",
+            .activation_height = 0,
+            .deactivation_height = std::nullopt,
+            .nInitialBits = 0x1d00ffff,
+            .anchor_time = std::nullopt
+        };
+        consensus.powTasks.clear();
+        consensus.powTasks.emplace(default_task.id, default_task);
 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
@@ -268,6 +290,7 @@ public:
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
         assert(consensus.hashGenesisBlock == uint256S("0x8d3471d9e762fd548789a03e52e4c05244ccd0bc49b0aa1ee156f4ea218a0dae"));
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
+        assert(genesis.nBits == default_task.nInitialBits);
 
         vFixedSeeds.clear();
         vSeeds.clear();
@@ -375,6 +398,17 @@ public:
         consensus.nMinerConfirmationWindow = 2016;       // nPowTargetTimespan / nPowTargetSpacing
         consensus.nASERTHalfLife = 60 * 60;              // One hour
 
+        Consensus::Params::PowTaskDefinition default_task{
+            .id = 0,
+            .name = "qhash",
+            .activation_height = 0,
+            .deactivation_height = std::nullopt,
+            .nInitialBits = 0x1e0377ae,
+            .anchor_time = std::nullopt
+        };
+        consensus.powTasks.clear();
+        consensus.powTasks.emplace(default_task.id, default_task);
+
         consensus.MinBIP9WarningHeight = 0;
         consensus.powLimit = uint256S("00000377ae000000000000000000000000000000000000000000000000000000");
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
@@ -402,6 +436,7 @@ public:
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
         assert(consensus.hashGenesisBlock == uint256S("0x233d3d6835b70b374362bd44b86b47688a3c90ec5a9b70ea3af8fb905566241c"));
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
+        assert(genesis.nBits == default_task.nInitialBits);
 
         vFixedSeeds.clear();
 
@@ -451,8 +486,18 @@ public:
         consensus.fPowNoRetargeting = true;
         consensus.nRuleChangeActivationThreshold = 108; // 75% for testchains
         consensus.nMinerConfirmationWindow = 144;       // Faster than normal for regtest (144 instead of 2016)
-        consensus.asertAnchorParams.reset();
         consensus.nASERTHalfLife = 2 * 24 * 60 * 60; // Two days
+
+        Consensus::Params::PowTaskDefinition default_task{
+            .id = 0,
+            .name = "qhash",
+            .activation_height = 0,
+            .deactivation_height = std::nullopt,
+            .nInitialBits = 0x207ffffe,
+            .anchor_time = std::nullopt
+        };
+        consensus.powTasks.clear();
+        consensus.powTasks.emplace(default_task.id, default_task);
 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = 0;
@@ -507,6 +552,7 @@ public:
         // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
         assert(consensus.hashGenesisBlock == uint256S("0x1026bc1ac397550a7ef728ef5a9207b5815622de9173bf5192d65b17dadfa010"));
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
+        assert(genesis.nBits == default_task.nInitialBits);
 
         vFixedSeeds.clear(); //!< Regtest mode doesn't have any fixed seeds.
         vSeeds.clear();

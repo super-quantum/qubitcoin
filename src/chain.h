@@ -197,6 +197,12 @@ public:
     //! (memory only) Maximum nTime in the chain up to and including this block.
     unsigned int nTimeMax{0};
 
+    //! (memory only) Pow task identifier encoded in the header version (bits 20-27).
+    uint8_t nPowTaskId{0};
+
+    //! (memory only) Cumulative ideal spacing (seconds) for this task up to and including this block.
+    int64_t nTaskSpacingSum{0};
+
     explicit CBlockIndex(const CBlockHeader& block)
         : nVersion{block.nVersion},
           hashMerkleRoot{block.hashMerkleRoot},

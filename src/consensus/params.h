@@ -11,6 +11,8 @@
 #include <chrono>
 #include <limits>
 #include <map>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace Consensus {
@@ -146,16 +148,21 @@ struct Params {
     }
 
     int64_t nASERTHalfLife;
-    
-    /** Used by the ASERT DAA */
-    struct ASERTAnchor {
-        int nHeight;
-        uint32_t nBits;
-        int64_t nPrevBlockTime;
-    };
 
-    /** For chains with a checkpoint after the ASERT anchor block, this is always defined */
-    std::optional<ASERTAnchor> asertAnchorParams; // TODO
+    struct PowTaskDefinition {
+        uint8_t id{0};
+        std::string name;
+        int activation_height{0};
+        std::optional<int> deactivation_height;
+        uint32_t nInitialBits{0}; // Initial difficulty (anchor nBits) for this task
+        
+        // Cached anchor timestamp (parent of anchor block, or anchor itself if genesis)
+        // Set to nullopt initially, populated on first difficulty calculation
+        std::optional<int64_t> anchor_time;
+    };
+    
+    /** Registered proof-of-work tasks keyed by task id. */
+    std::map<uint8_t, PowTaskDefinition> powTasks;
 };
 
 } // namespace Consensus

@@ -19,6 +19,7 @@
 #include <policy/feerate.h>
 #include <policy/policy.h>
 #include <pow.h>
+#include <pow/tasks.h>
 #include <primitives/transaction.h>
 #include <util/moneystr.h>
 #include <util/time.h>
@@ -94,7 +95,7 @@ void BlockAssembler::resetBlock()
     nFees = 0;
 }
 
-std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn)
+std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn, uint8_t task_id)
 {
     const auto time_start{SteadyClock::now()};
 
@@ -123,6 +124,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     if (chainparams.MineBlocksOnDemand()) {
         pblock->nVersion = gArgs.GetIntArg("-blockversion", pblock->nVersion);
     }
+    
+    // Encode the task ID into the block version (bits 20-27)
+    pblock->nVersion = EncodeTaskId(pblock->nVersion, task_id);
 
     pblock->nTime = TicksSinceEpoch<std::chrono::seconds>(NodeClock::now());
     m_lock_time_cutoff = pindexPrev->GetMedianTimePast();

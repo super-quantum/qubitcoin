@@ -30,6 +30,7 @@
 #include <node/transaction.h>
 #include <node/utxo_snapshot.h>
 #include <node/warnings.h>
+#include <pow/tasks.h>
 #include <primitives/transaction.h>
 #include <rpc/server.h>
 #include <rpc/server_util.h>
@@ -411,18 +412,28 @@ static RPCHelpMan getdifficulty()
 {
     return RPCHelpMan{"getdifficulty",
                 "\nReturns the proof-of-work difficulty as a multiple of the minimum difficulty.\n",
-                {},
+                {
+                    {"task_id", RPCArg::Type::NUM, RPCArg::Default{POW_DEFAULT_TASK_ID}, "The PoW task ID to mine (0-255). Defaults to the default task (qhash)."},
+                },
                 RPCResult{
                     RPCResult::Type::NUM, "", "the proof-of-work difficulty as a multiple of the minimum difficulty."},
                 RPCExamples{
                     HelpExampleCli("getdifficulty", "")
             + HelpExampleRpc("getdifficulty", "")
+            + HelpExampleRpc("getdifficulty", "1")
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
+    
+    const auto task_id_int{self.Arg<int>("task_id")};
+    if (task_id_int < 0 || task_id_int > 255) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "task_id must be between 0 and 255");
+    }
+    const auto task_id = static_cast<uint8_t>(task_id_int);
+    
     LOCK(cs_main);
-    return GetDifficulty(*CHECK_NONFATAL(chainman.ActiveChain().Tip()));
+    return GetDifficulty(*CHECK_NONFATAL(FindPreviousTaskBlock(CHECK_NONFATAL(chainman.ActiveChain().Tip()), task_id)));
 },
     };
 }
@@ -1264,6 +1275,18 @@ RPCHelpMan getblockchaininfo()
                 {RPCResult::Type::NUM, "pruneheight", /*optional=*/true, "height of the last block pruned, plus one (only present if pruning is enabled)"},
                 {RPCResult::Type::BOOL, "automatic_pruning", /*optional=*/true, "whether automatic pruning is enabled (only present if pruning is enabled)"},
                 {RPCResult::Type::NUM, "prune_target_size", /*optional=*/true, "the target size used by pruning (only present if automatic pruning is enabled)"},
+                {RPCResult::Type::ARR, "tasks", "information about each PoW task",
+                {
+                    {RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::NUM, "id", "The task ID"},
+                        {RPCResult::Type::STR, "name", "The task name"},
+                        {RPCResult::Type::NUM, "difficulty", "The current difficulty for this task"},
+                        {RPCResult::Type::BOOL, "active", "Whether this task is currently active"},
+                        {RPCResult::Type::NUM, "activation_height", "The height at which this task activates"},
+                        {RPCResult::Type::NUM, "deactivation_height", /*optional=*/true, "The height at which this task deactivates (if set)"},
+                    }},
+                }},
                 (IsDeprecatedRPCEnabled("warnings") ?
                     RPCResult{RPCResult::Type::STR, "warnings", "any network and blockchain warnings (DEPRECATED)"} :
                     RPCResult{RPCResult::Type::ARR, "warnings", "any network and blockchain warnings (run with `-deprecatedrpc=warnings` to return the latest warning as a single string)",
@@ -1285,6 +1308,9 @@ RPCHelpMan getblockchaininfo()
 
     const CBlockIndex& tip{*CHECK_NONFATAL(active_chainstate.m_chain.Tip())};
     const int height{tip.nHeight};
+    const int next_height = height + 1;
+    const Consensus::Params& consensusParams = chainman.GetParams().GetConsensus();
+    
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("chain", chainman.GetParams().GetChainTypeString());
     obj.pushKV("blocks", height);
@@ -1308,6 +1334,22 @@ RPCHelpMan getblockchaininfo()
             obj.pushKV("prune_target_size", chainman.m_blockman.GetPruneTarget());
         }
     }
+
+    UniValue tasks(UniValue::VARR);
+    for (const auto& [task_id, taskDef] : consensusParams.powTasks) {
+        UniValue task_info(UniValue::VOBJ);
+        task_info.pushKV("id", (int)task_id);
+        task_info.pushKV("name", taskDef.name);
+        task_info.pushKV("difficulty", GetDifficulty(*FindPreviousTaskBlock(&tip, task_id)));
+        task_info.pushKV("active", IsTaskActive(consensusParams, task_id, next_height));
+        task_info.pushKV("activation_height", taskDef.activation_height);
+        if (taskDef.deactivation_height) {
+            task_info.pushKV("deactivation_height", *taskDef.deactivation_height);
+        }
+        
+        tasks.push_back(std::move(task_info));
+    }
+    obj.pushKV("tasks", std::move(tasks));
 
     NodeContext& node = EnsureAnyNodeContext(request.context);
     obj.pushKV("warnings", node::GetWarningsForRpc(*CHECK_NONFATAL(node.warnings), IsDeprecatedRPCEnabled("warnings")));
