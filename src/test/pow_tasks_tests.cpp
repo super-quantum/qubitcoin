@@ -36,6 +36,7 @@ Consensus::Params MakeParams()
         .activation_height = 0,
         .deactivation_height = std::nullopt,
         .nInitialBits = 0x1e05ffff,
+        .deqode = std::nullopt,
     };
     return params;
 }
@@ -49,6 +50,7 @@ void AddTask(Consensus::Params& params, uint8_t id, int from, std::optional<int>
         .activation_height = from,
         .deactivation_height = until,
         .nInitialBits = 0x1e05ffff,
+        .deqode = std::nullopt,
     };
 }
 
@@ -183,6 +185,7 @@ BOOST_AUTO_TEST_CASE(validate_pow_tasks)
 {
     BOOST_CHECK_NO_THROW(ValidatePowTasks(MakeParams()));
 
+    // Task 2 is not deqode, so it needs no sizing.
     Consensus::Params two_tasks{MakeParams()};
     AddTask(two_tasks, 2, 10, std::nullopt);
     BOOST_CHECK_NO_THROW(ValidatePowTasks(two_tasks));

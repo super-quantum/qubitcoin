@@ -4,11 +4,14 @@
 
 #include <pow/tasks.h>
 
+#include <arith_uint256.h>
 #include <consensus/params.h>
 #include <chain.h>
 #include <hash.h>
 #include <pow.h>
+#include <pow/tasks/deqode.h>
 #include <primitives/block.h>
+#include <random.h>
 
 #include <algorithm>
 #include <cassert>
@@ -78,6 +81,9 @@ bool CheckTaskProofOfWork(const CBlockHeader& header, const Consensus::Params& p
     switch (task_id) {
     case POW_DEFAULT_TASK_ID:
         return CheckQhashSolution(header, params);
+    case POW_DEQODE_TASK_ID:
+        if (!def->deqode) return false;
+        return deqode::CheckSolution(header, params, *def->deqode);
     default:
         return false;
     }
@@ -88,6 +94,25 @@ bool SolveTaskProofOfWork(CBlockHeader& header, const Consensus::Params& params)
     const uint8_t task_id = DecodeTaskId(header.nVersion);
     const auto* def = LookupTaskDefinition(params, task_id);
     if (!def) return false;
+
+    if (task_id == POW_DEQODE_TASK_ID) {
+        if (!def->deqode) return false;
+        if (!deqode::ParamsAreSane(*def->deqode)) return false;
+
+        arith_uint256 difficulty;
+        if (!deqode::DifficultyFromBits(header.nBits, params, difficulty)) return false;
+        deqode::DerivedWork work;
+        if (!deqode::DeriveWork(difficulty, *def->deqode, work)) return false;
+
+        const deqode::Instance instance{deqode::DeriveInstance(header, *def->deqode)};
+        deqode::Witness error;
+        FastRandomContext rng;
+        if (!deqode::Solve(instance, work.w, rng, DEQODE_SOLVER_ITERATIONS, error)) {
+            header.vTaskData.clear();
+            return false;
+        }
+        header.vTaskData = deqode::EncodeWitness(error, def->deqode->n);
+    }
 
     return CheckTaskProofOfWork(header, params);
 }

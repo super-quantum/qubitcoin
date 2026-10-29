@@ -94,6 +94,7 @@ BITCOIN_TESTS =\
   test/cuckoocache_tests.cpp \
   test/dbwrapper_tests.cpp \
   test/denialofservice_tests.cpp \
+  test/deqode_tests.cpp \
   test/descriptor_tests.cpp \
   test/disconnected_transactions.cpp \
   test/feefrac_tests.cpp \

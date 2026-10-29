@@ -260,6 +260,7 @@ BITCOIN_CORE_H = \
   pow/task_id.h \
   pow/task_template.h \
   pow/tasks.h \
+  pow/tasks/deqode.h \
   protocol.h \
   psbt.h \
   random.h \
@@ -465,6 +466,7 @@ libbitcoin_node_a_SOURCES = \
   pow/schedule.cpp \
   pow/task_template.cpp \
   pow/tasks.cpp \
+  pow/tasks/deqode.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
   rpc/fees.cpp \
@@ -977,6 +979,7 @@ libbitcoinkernel_la_SOURCES = \
   pow.cpp \
   pow/schedule.cpp \
   pow/tasks.cpp \
+  pow/tasks/deqode.cpp \
   primitives/block.cpp \
   primitives/transaction.cpp \
   pubkey.cpp \

@@ -123,6 +123,7 @@ public:
             .activation_height = 0,
             .deactivation_height = std::nullopt,
             .nInitialBits = 0x1e05ffff,
+            .deqode = std::nullopt,
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
@@ -258,6 +259,7 @@ public:
             .activation_height = 0,
             .deactivation_height = std::nullopt,
             .nInitialBits = 0x1d00ffff,
+            .deqode = std::nullopt,
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
@@ -405,6 +407,7 @@ public:
             .activation_height = 0,
             .deactivation_height = std::nullopt,
             .nInitialBits = 0x1e0377ae,
+            .deqode = std::nullopt,
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
@@ -495,9 +498,41 @@ public:
             .activation_height = 0,
             .deactivation_height = std::nullopt,
             .nInitialBits = 0x207ffffe,
+            .deqode = std::nullopt,
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
+
+        // deqode only with -deqodeheight, at a sizing that exists to exercise the code.
+        if (opts.deqode_activation_height) {
+            Consensus::Params::PowTaskDefinition deqode_task{
+                .id = 1,
+                .name = "deqode",
+                .activation_height = *opts.deqode_activation_height,
+                .deactivation_height = std::nullopt,
+                .nInitialBits = 0x20009fd8, // difficulty 410: w = 4, K = 10
+                .work_scale_num = 1,
+                .work_scale_den = 205,
+                .deqode = Consensus::Params::DeqodeParams{
+                    .n = 32,
+                    .r = 17,
+                    .gate_multiplier = 24,
+                    .w_min = 2,
+                    .w_max = 8,
+                    // contrib/devtools/deqode-hardness.py --n 32 --r 17 --w-min 2 --w-max 8
+                    .hardness = {
+                        0x02035300, // w = 2
+                        0x02009d00, // w = 3
+                        0x01290000, // w = 4
+                        0x010e0000, // w = 5
+                        0x01060000, // w = 6
+                        0x01030000, // w = 7
+                        0x01020000, // w = 8
+                    },
+                },
+            };
+            consensus.powTasks.emplace(deqode_task.id, deqode_task);
+        }
 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = 0;

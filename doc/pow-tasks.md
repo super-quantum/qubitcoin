@@ -11,6 +11,7 @@ needs no changes.
 | task | name | document |
 |---|---|---|
 | 0 | `qhash` | `src/crypto/qhash.h` |
+| 1 | `deqode` | [deqode.md](deqode.md) |
 
 ## Task id
 

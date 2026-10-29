@@ -153,6 +153,21 @@ struct Params {
 
     int64_t nASERTHalfLife;
 
+    /** Sizing for the deqode task. */
+    struct DeqodeParams {
+        int n{0};                 // qubits
+        int r{0};                 // stabilizer generators (syndrome bits)
+        int gate_multiplier{24};  // Clifford gates per qubit in the code circuit
+
+        //! Range of weight bounds the hardness table covers. The bound itself is derived from nBits.
+        int w_min{0};
+        int w_max{0};
+
+        //! Expected cost of one witness at each weight bound, hardness[w - w_min], in compact
+        //! encoding. Strictly decreasing.
+        std::vector<uint32_t> hardness;
+    };
+
     struct PowTaskDefinition {
         uint8_t id{0};
         std::string name;
@@ -167,6 +182,8 @@ struct Params {
          */
         uint32_t work_scale_num{1};
         uint32_t work_scale_den{1};
+
+        std::optional<DeqodeParams> deqode;
     };
     
     /** Registered proof-of-work tasks keyed by task id. */

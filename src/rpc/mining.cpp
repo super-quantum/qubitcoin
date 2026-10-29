@@ -25,6 +25,7 @@
 #include <pow.h>
 #include <pow/task_template.h>
 #include <pow/tasks.h>
+#include <pow/tasks/deqode.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
 #include <rpc/server.h>
@@ -491,6 +492,8 @@ static RPCHelpMan getmininginfo()
                                 {RPCResult::Type::BOOL, "active", "Whether this task is currently active"},
                                 {RPCResult::Type::NUM, "activation_height", "The height at which this task activates"},
                                 {RPCResult::Type::NUM, "deactivation_height", /*optional=*/true, "The height at which this task deactivates (if set)"},
+                                {RPCResult::Type::NUM, "weight_bound", /*optional=*/true, "For deqode, the Pauli weight bound this task's difficulty resolves to"},
+                                {RPCResult::Type::NUM, "expected_witnesses", /*optional=*/true, "For deqode, the witnesses expected per block (K) at this task's difficulty"},
                             }},
                         }},
                         (IsDeprecatedRPCEnabled("warnings") ?
@@ -539,6 +542,16 @@ static RPCHelpMan getmininginfo()
         task_info.pushKV("activation_height", taskDef.activation_height);
         if (taskDef.deactivation_height) {
             task_info.pushKV("deactivation_height", *taskDef.deactivation_height);
+        }
+        if (taskDef.deqode) {
+            const uint32_t bits{prev_task_block ? prev_task_block->nBits : taskDef.nInitialBits};
+            arith_uint256 difficulty;
+            deqode::DerivedWork work;
+            if (deqode::DifficultyFromBits(bits, consensusParams, difficulty) &&
+                deqode::DeriveWork(difficulty, *taskDef.deqode, work)) {
+                task_info.pushKV("weight_bound", work.w);
+                task_info.pushKV("expected_witnesses", (uint64_t)work.k);
+            }
         }
         
         tasks.push_back(std::move(task_info));

@@ -45,6 +45,7 @@ Consensus::Params MakeParams()
         .activation_height = 0,
         .deactivation_height = std::nullopt,
         .nInitialBits = ANCHOR_BITS,
+        .deqode = std::nullopt,
     };
     return params;
 }
@@ -57,6 +58,7 @@ void AddTask(Consensus::Params& params, uint8_t id, int from)
         .activation_height = from,
         .deactivation_height = std::nullopt,
         .nInitialBits = ANCHOR_BITS,
+        .deqode = std::nullopt,
     };
 }
 

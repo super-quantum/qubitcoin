@@ -45,6 +45,14 @@ void ReadRegTestArgs(const ArgsManager& args, CChainParams::RegTestOptions& opti
 {
     if (auto value = args.GetBoolArg("-fastprune")) options.fastprune = *value;
 
+    if (args.IsArgSet("-deqodeheight")) {
+        const int64_t height{args.GetIntArg("-deqodeheight", 0)};
+        if (height < 0 || height > std::numeric_limits<int>::max()) {
+            throw std::runtime_error(strprintf("Invalid height value (%d) for -deqodeheight.", height));
+        }
+        options.deqode_activation_height = static_cast<int>(height);
+    }
+
     for (const std::string& arg : args.GetArgs("-testactivationheight")) {
         const auto found{arg.find('@')};
         if (found == std::string::npos) {

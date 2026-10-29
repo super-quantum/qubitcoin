@@ -8,6 +8,8 @@
 #include <arith_uint256.h>
 #include <consensus/params.h>
 #include <pow/task_id.h>
+#include <pow/tasks/deqode.h>
+#include <primitives/block.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +20,12 @@
 class CBlockHeader;
 class CBlockIndex;
 class BlockValidationState;
+
+/** Task 1: deqode, dense random stabilizer decoding. */
+static constexpr uint8_t POW_DEQODE_TASK_ID = 1;
+
+/** Prange iterations the node's own solver will spend on one nonce before moving on. */
+static constexpr int DEQODE_SOLVER_ITERATIONS = 20000;
 
 /** Look up the consensus definition for a given task id. */
 const Consensus::Params::PowTaskDefinition* LookupTaskDefinition(const Consensus::Params& params, uint8_t task_id);
@@ -67,6 +75,35 @@ inline void ValidatePowTasks(const Consensus::Params& params)
         if (task.work_scale_den == 0 || task.work_scale_num == 0) Fail("a task has a zero work scale");
         if (arith_uint256{}.SetCompact(task.nInitialBits) > TaskPowLimit(params, task)) {
             Fail("a task's anchor is easier than its minimum difficulty");
+        }
+
+        if (id == POW_DEQODE_TASK_ID) {
+            if (!task.deqode) Fail("the deqode task carries no sizing");
+            const auto& s = *task.deqode;
+            if (s.n <= 1 || s.n > deqode::MAX_DEQODE_QUBITS) Fail("deqode n out of range");
+            if (s.r <= 0 || s.r > s.n) Fail("deqode r out of range");
+            if (s.gate_multiplier <= 0) Fail("deqode gate_multiplier out of range");
+            if (2 * ((s.n + 7) / 8) > static_cast<int>(MAX_BLOCK_TASK_DATA_SIZE)) {
+                Fail("deqode witness does not fit in the header");
+            }
+            if (s.w_min < 0 || s.w_max < s.w_min || s.w_max > s.n) Fail("deqode weight range out of order");
+            if (s.hardness.size() != static_cast<size_t>(s.w_max - s.w_min + 1)) {
+                Fail("deqode hardness table length does not match the weight range");
+            }
+            for (size_t i = 0; i < s.hardness.size(); ++i) {
+                bool negative{false}, overflow{false};
+                arith_uint256 cost;
+                cost.SetCompact(s.hardness[i], &negative, &overflow);
+                if (negative || overflow || cost == 0) Fail("deqode hardness entry is not a usable cost");
+                if (i == 0) continue;
+                arith_uint256 prev;
+                prev.SetCompact(s.hardness[i - 1]);
+                if (!(cost < prev)) Fail("deqode hardness table is not strictly decreasing");
+                // A wider step leaves difficulties no (w, K) pair can express.
+                if (prev > cost * (DEQODE_K_MAX / DEQODE_K_MIN)) {
+                    Fail("deqode hardness table steps wider than the difficulty band");
+                }
+            }
         }
     }
 
