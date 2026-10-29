@@ -383,7 +383,7 @@ def initialize_datadir(dirname, n, chain, disable_autoconnect=True):
 
 def write_config(config_path, *, n, chain, extra_config="", disable_autoconnect=True):
     # Translate chain subdirectory name to config name
-    if chain == 'testnet3':
+    if chain == 'testnet':
         chain_name_conf_arg = 'testnet'
         chain_name_conf_section = 'test'
     else:

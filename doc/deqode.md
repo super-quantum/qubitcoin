@@ -116,17 +116,17 @@ A template for task 1 (`"task_id": 1`) has a `task` object like:
 {
   "id": 1,
   "name": "deqode",
-  "data_bytes": 8,
+  "data_bytes": 72,
   "deqode": {
-    "n": 32,
-    "r": 17,
+    "n": 288,
+    "r": 187,
     "gate_multiplier": 24,
     "code_seed": "hashPrevBlock",
     "syndrome_seed": "sha256(header[0:80])",
     "acceptance_preimage": "header[0:80] || witness",
-    "w": 4,
-    "expected_witnesses": 10,
-    "acceptance_target": "1999999999999999..."
+    "w": 45,
+    "expected_witnesses": 5,
+    "acceptance_target": "3333333333333333..."
   }
 }
 ```
@@ -137,20 +137,21 @@ missing and `task` has `"unsupported": true`. `getmininginfo` also reports
 `weight_bound` and `expected_witnesses` for the task.
 
 The solver used by the node's `generate*` RPCs is a simple Prange decoder meant for
-regtest.
+regtest. It is far too slow for testnet's sizing.
 
 ## Parameters
 
-deqode is only available on regtest, with `-deqodeheight=<n>`:
+| | testnet | regtest |
+|---|---|---|
+| activation | height 5 | `-deqodeheight=<n>`, off by default |
+| `n`, `r`, `gate_multiplier` | 288, 187, 24 | 32, 17, 24 |
+| `w` range | 31–65 | 2–8 |
+| `nInitialBits` | `0x1c233d9a` (difficulty 31200111727) | `0x20009fd8` (difficulty 410) |
+| anchor | `w = 45`, `K = 5` | `w = 4`, `K = 10` |
+| minimum difficulty | `w = 46`, `K = 4` | `w = 4`, `K = 10` (the anchor) |
+| witness bytes | 72 | 8 |
 
-| | regtest |
-|---|---|
-| `n`, `r`, `gate_multiplier` | 32, 17, 24 |
-| `w` range | 2–8 |
-| `nInitialBits` | `0x20009fd8` (difficulty 410) |
-| anchor | `w = 4`, `K = 10` |
-| minimum difficulty | `w = 4`, `K = 10` (the anchor) |
-| witness bytes | 8 |
-
-The hardness table comes from `contrib/devtools/deqode-hardness.py`. Changing it is a
-hard fork.
+Testnet's hardness table is the measured expected number of candidates a Stern decoder
+(window 19, orders 2:2) examines per witness, for `w >= 40`, extrapolated down to
+`w = 31`. Regtest's table comes from `contrib/devtools/deqode-hardness.py`. Changing
+either table is a hard fork.

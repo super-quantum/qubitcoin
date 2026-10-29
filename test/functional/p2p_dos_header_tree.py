@@ -20,7 +20,7 @@ import os
 class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
-        self.chain = 'testnet3'  # Use testnet chain because it has an early checkpoint
+        self.chain = 'testnet'  # Use testnet chain because it has an early checkpoint
         self.num_nodes = 2
         self.extra_args = [["-minimumchainwork=0x0", '-prune=550']] * self.num_nodes
 

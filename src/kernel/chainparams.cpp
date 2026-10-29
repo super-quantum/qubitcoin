@@ -235,16 +235,15 @@ public:
         consensus.signet_blocks = false;
         consensus.signet_challenge.clear();
         consensus.nSubsidyHalvingInterval = 210000;
-        consensus.script_flag_exceptions.emplace( // BIP16 exception
-            uint256S("0x00000000dd30457c001f4095d208cc1296b0eed002427aa599874af7a432b105"), SCRIPT_VERIFY_NONE);
-        consensus.BIP34Height = 21111;
-        consensus.BIP34Hash = uint256S("0x0000000023b3a96d3484e5abb3755c413e7d41500f8e2a5c3f0dd01299cd8ef8");
-        consensus.BIP65Height = 581885;          // 00000000007f6655f22f98e72ed80d8b06dc761d5da09df0fa1dc4be4f861eb6
-        consensus.BIP66Height = 330776;          // 000000002104c8c45e99a8853285a3b592602a3ccde2b832481da85e9e4ba182
-        consensus.CSVHeight = 770112;            // 00000000025e930139bac5c6c31a403776da130831ab85be56578f3fa75369bb
-        consensus.SegwitHeight = 834624;         // 00000000002b980fcd729daaa248fd9316a5200e9b367f4ff2c42453e84201ca
-        consensus.MinBIP9WarningHeight = 836640; // segwit activation height + miner confirmation window
-        consensus.powLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.script_flag_exceptions.clear();
+        consensus.BIP34Height = 1;
+        consensus.BIP34Hash = uint256{};
+        consensus.BIP65Height = 1;
+        consensus.BIP66Height = 1;
+        consensus.CSVHeight = 1;
+        consensus.SegwitHeight = 1;
+        consensus.MinBIP9WarningHeight = 0;
+        consensus.powLimit = uint256S("0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.nPowTargetTimespan = 14 * 24 * 60 * 60; // two weeks
         consensus.nPowTargetSpacing = 10 * 60;
         consensus.fPowAllowMinDifficultyBlocks = true;
@@ -253,16 +252,77 @@ public:
         consensus.nMinerConfirmationWindow = 2016;       // nPowTargetTimespan / nPowTargetSpacing
         consensus.nASERTHalfLife = 60 * 60; // One hour
 
+        // Difficulty 260000: about one block per 1200 s for one qubitcoin-miner qhash-cpu thread.
         Consensus::Params::PowTaskDefinition default_task{
             .id = 0,
             .name = "qhash",
             .activation_height = 0,
             .deactivation_height = std::nullopt,
-            .nInitialBits = 0x1d00ffff,
+            .nInitialBits = 0x1e40871a,
             .deqode = std::nullopt,
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
+
+        // The hardness table is the measured expected number of Stern candidates per
+        // witness (window 19, orders 2:2) for w >= 40, extrapolated below that.
+        Consensus::Params::PowTaskDefinition deqode_task{
+            .id = 1,
+            .name = "deqode",
+            .activation_height = 5,
+            .deactivation_height = std::nullopt,
+            // Difficulty 31200111727 (w = 45, K = 5): about one block per 1200 s for one
+            // qubitcoin-miner deqode thread.
+            .nInitialBits = 0x1c233d9a,
+            // Anchor difficulty over task 0's.
+            .work_scale_num = 1,
+            .work_scale_den = 120000,
+            .deqode = Consensus::Params::DeqodeParams{
+                .n = 288,
+                .r = 187,
+                .gate_multiplier = 24,
+                .w_min = 31,
+                .w_max = 65,
+                .hardness = {
+                    0x0817e5a1, // w = 31
+                    0x08048976, // w = 32
+                    0x0800e69b, // w = 33
+                    0x072fd412, // w = 34
+                    0x070a59d8, // w = 35
+                    0x070255cf, // w = 36
+                    0x07008c75, // w = 37
+                    0x062256fd, // w = 38
+                    0x0608ba8f, // w = 39
+                    0x06024e16, // w = 40
+                    0x0600ac53, // w = 41
+                    0x052cbd9b, // w = 42
+                    0x050d229e, // w = 43
+                    0x050400b0, // w = 44
+                    0x05015966, // w = 45
+                    0x046f4314, // w = 46
+                    0x0425db40, // w = 47
+                    0x040d84e5, // w = 48
+                    0x0404e5e1, // w = 49
+                    0x0401d741, // w = 50
+                    0x0400bafc, // w = 51
+                    0x034ab667, // w = 52
+                    0x031ecd35, // w = 53
+                    0x030d7173, // w = 54
+                    0x0305e3e9, // w = 55
+                    0x0302b66e, // w = 56
+                    0x030155a4, // w = 57
+                    0x0300a3ce, // w = 58
+                    0x0250bf00, // w = 59
+                    0x02294c00, // w = 60
+                    0x02159100, // w = 61
+                    0x020b9500, // w = 62
+                    0x0206b400, // w = 63
+                    0x0203ce00, // w = 64
+                    0x02023900, // w = 65
+                },
+            },
+        };
+        consensus.powTasks.emplace(deqode_task.id, deqode_task);
 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = Consensus::BIP9Deployment::NEVER_ACTIVE;
@@ -271,37 +331,33 @@ public:
 
         // Deployment of Taproot (BIPs 340-342)
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].bit = 2;
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = 1619222400;   // April 24th, 2021
-        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = 1628640000;     // August 11th, 2021
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nStartTime = Consensus::BIP9Deployment::ALWAYS_ACTIVE;
+        consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].nTimeout = Consensus::BIP9Deployment::NO_TIMEOUT;
         consensus.vDeployments[Consensus::DEPLOYMENT_TAPROOT].min_activation_height = 0; // No activation delay
 
-        consensus.nMinimumChainWork = uint256S("0x000000000000000000000000000000000000000000000c59b14e264ba6c15db9");
-        consensus.defaultAssumeValid = uint256S("0x000000000001323071f38f21ea5aae529ece491eadaccce506a59bcc2d968917"); // 2550000
+        consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000000000000000000000001");
+        consensus.defaultAssumeValid = uint256{};
 
-        pchMessageStart[0] = 0x0b;
-        pchMessageStart[1] = 0x11;
-        pchMessageStart[2] = 0x09;
-        pchMessageStart[3] = 0x07;
-        nDefaultPort = 18333;
+        pchMessageStart[0] = 0xd1;
+        pchMessageStart[1] = 0xd4;
+        pchMessageStart[2] = 0xc3;
+        pchMessageStart[3] = 0xd4;
+        nDefaultPort = 42070;
         nPruneAfterHeight = 1000;
-        m_assumed_blockchain_size = 42;
-        m_assumed_chain_state_size = 3;
+        m_assumed_blockchain_size = 1;
+        m_assumed_chain_state_size = 1;
 
         ValidatePowTasks(consensus);
 
-        genesis = CreateGenesisBlock(1296688602, 414098458, 0x1d00ffff, 1, 50 * COIN);
+        // Mined with: qubitcoin-genesis --bits=0x1e40871a --version=1
+        genesis = CreateGenesisBlock(1793297555, 65707, 0x1e40871a, 1, 50 * COIN);
         // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
-        consensus.hashGenesisBlock = uint256S("0x8d3471d9e762fd548789a03e52e4c05244ccd0bc49b0aa1ee156f4ea218a0dae");
+        consensus.hashGenesisBlock = uint256S("0x00001e634001d70204b14676a716cd019b97e3cb6d3dd818a54a24e41feb39d8");
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
         assert(genesis.nBits == default_task.nInitialBits);
 
         vFixedSeeds.clear();
         vSeeds.clear();
-        // nodes with support for servicebits filtering should be at the top
-        vSeeds.emplace_back("testnet-seed.bitcoin.jonasschnelli.ch.");
-        vSeeds.emplace_back("seed.tbtc.petertodd.net.");
-        vSeeds.emplace_back("seed.testnet.bitcoin.sprovoost.nl.");
-        vSeeds.emplace_back("testnet-seed.bluematt.me."); // Just a static list of stable node(s), only supports x9
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1, 111);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1, 196);
@@ -311,27 +367,17 @@ public:
 
         bech32_hrp = "tb";
 
-        // vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_test), std::end(chainparams_seed_test));
-
         fDefaultConsistencyChecks = false;
         m_is_mockable_chain = false;
 
-        checkpointData = {
-            {
-                {546, uint256S("000000002a936ca763904c3c35fce2f3556c559c0214345d31b1bcebf76acb70")},
-            }};
+        checkpointData = {{}};
 
-        m_assumeutxo_data = {
-            {.height = 2'500'000,
-             .hash_serialized = AssumeutxoHash{uint256S("0xf841584909f68e47897952345234e37fcd9128cd818f41ee6c3ca68db8071be7")},
-             .nChainTx = 66484552,
-             .blockhash = uint256S("0x0000000000000093bcb68c03a9a168ae252572d348a2eaeba2cdf9231d73206f")}};
+        m_assumeutxo_data = {};
 
         chainTxData = ChainTxData{
-            // Data from RPC: getchaintxstats 4096 000000000001323071f38f21ea5aae529ece491eadaccce506a59bcc2d968917
-            .nTime = 1703579240,
-            .nTxCount = 67845391,
-            .dTxRate = 1.464436832560951,
+            .nTime = 0,
+            .nTxCount = 0,
+            .dTxRate = 0,
         };
     }
 };

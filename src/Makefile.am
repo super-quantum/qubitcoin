@@ -109,6 +109,7 @@ endif
 
 if BUILD_BITCOIN_UTIL
   bin_PROGRAMS += bitcoin-util
+  bin_PROGRAMS += qubitcoin-genesis
 endif
 
 if BUILD_BITCOIN_CHAINSTATE
@@ -865,6 +866,22 @@ bitcoin_tx_LDADD = \
   $(LIBBITCOIN_CONSENSUS) \
   $(LIBBITCOIN_CRYPTO) \
   $(LIBSECP256K1)
+#
+
+# qubitcoin-genesis binary #
+qubitcoin_genesis_SOURCES = qubitcoin-genesis.cpp
+qubitcoin_genesis_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+qubitcoin_genesis_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+qubitcoin_genesis_LDFLAGS = $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
+
+qubitcoin_genesis_LDADD = \
+  $(LIBUNIVALUE) \
+  $(LIBBITCOIN_COMMON) \
+  $(LIBBITCOIN_UTIL) \
+  $(LIBBITCOIN_CONSENSUS) \
+  $(LIBBITCOIN_CRYPTO) \
+  $(LIBSECP256K1) \
+  $(CUSTATEVEC_LDFLAGS)
 #
 
 # bitcoin-wallet binary #

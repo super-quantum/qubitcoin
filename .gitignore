@@ -11,6 +11,7 @@ src/bitcoin-tx
 src/bitcoin-util
 src/bitcoin-chainstate
 src/bitcoin-wallet
+src/qubitcoin-genesis
 src/test/fuzz/fuzz
 src/test/test_bitcoin
 src/qt/test/test_bitcoin-qt

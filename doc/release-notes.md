@@ -4,6 +4,31 @@ Qubitcoin Core Release Notes
 Notable changes
 ---------------
 
+### New testnet
+
+`-testnet` is now a Qubitcoin network of its own. It used to run on Bitcoin's testnet
+genesis block, which does not meet its own target under qhash, so the node failed on
+its second start.
+
+| | |
+|---|---|
+| genesis | `00001e634001d70204b14676a716cd019b97e3cb6d3dd818a54a24e41feb39d8` |
+| P2P magic | `d1 d4 c3 d4` |
+| default port | 42070 |
+| DNS seeds, fixed seeds, checkpoints | none |
+
+Its data directory is `testnet/` rather than `testnet3/`; an existing `testnet3/`
+directory is neither used nor touched. `-signet` still uses Bitcoin's genesis and does
+not work yet.
+
+### deqode on testnet
+
+Testnet activates a second proof-of-work task at height 5: task 1, `deqode`, a
+stabilizer decoding problem solved on the CPU. From then on both tasks target one block
+every 1200 seconds. A task 1 block carries its solution in the block header. See
+[deqode.md](deqode.md) for the specification; `qubitcoin-miner` can mine it. On
+regtest the task can be enabled with `-deqodeheight=<n>`.
+
 ### Proof-of-work tasks
 
 - A block version whose top three bits are `010` carries a proof-of-work task id in
@@ -24,6 +49,15 @@ Notable changes
 
 `-daemon` works again. Computing the genesis block hash at startup initialised CUDA
 before the process forked, so the daemon died right after starting.
+
+### `qubitcoin-genesis`
+
+A new tool that mines a genesis block for a given target and prints the lines needed in
+the chain parameters:
+
+```
+src/qubitcoin-genesis --bits=0x1e40871a
+```
 
 ---
 
