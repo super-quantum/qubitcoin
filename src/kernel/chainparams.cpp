@@ -156,9 +156,8 @@ public:
         m_assumed_chain_state_size = 10;
 
         genesis = CreateGenesisBlock(1730075215, 2092524032, 0x1e05ffff, 4, 50 * COIN);
-        consensus.hashGenesisBlock = genesis.GetHash();
-        // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x00000021cce0cd4553ffc5545f38c6ec2696783f87a1252818f07c52bf9b362b"));
+        // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
+        consensus.hashGenesisBlock = uint256S("0x00000021cce0cd4553ffc5545f38c6ec2696783f87a1252818f07c52bf9b362b");
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
         assert(genesis.nBits == default_task.nInitialBits);
 
@@ -286,9 +285,8 @@ public:
         m_assumed_chain_state_size = 3;
 
         genesis = CreateGenesisBlock(1296688602, 414098458, 0x1d00ffff, 1, 50 * COIN);
-        consensus.hashGenesisBlock = genesis.GetHash();
-        // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x8d3471d9e762fd548789a03e52e4c05244ccd0bc49b0aa1ee156f4ea218a0dae"));
+        // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
+        consensus.hashGenesisBlock = uint256S("0x8d3471d9e762fd548789a03e52e4c05244ccd0bc49b0aa1ee156f4ea218a0dae");
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
         assert(genesis.nBits == default_task.nInitialBits);
 
@@ -432,9 +430,8 @@ public:
         nPruneAfterHeight = 1000;
 
         genesis = CreateGenesisBlock(1598918400, 52613770, 0x1e0377ae, 1, 50 * COIN);
-        consensus.hashGenesisBlock = genesis.GetHash();
-        // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x233d3d6835b70b374362bd44b86b47688a3c90ec5a9b70ea3af8fb905566241c"));
+        // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
+        consensus.hashGenesisBlock = uint256S("0x233d3d6835b70b374362bd44b86b47688a3c90ec5a9b70ea3af8fb905566241c");
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
         assert(genesis.nBits == default_task.nInitialBits);
 
@@ -548,9 +545,8 @@ public:
         }
 
         genesis = CreateGenesisBlock(1723726478, 3, 0x207ffffe, 1, 50 * COIN);
-        consensus.hashGenesisBlock = genesis.GetHash();
-        // std::cout << consensus.hashGenesisBlock.GetHex() << std::endl;
-        assert(consensus.hashGenesisBlock == uint256S("0x1026bc1ac397550a7ef728ef5a9207b5815622de9173bf5192d65b17dadfa010"));
+        // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
+        consensus.hashGenesisBlock = uint256S("0x1026bc1ac397550a7ef728ef5a9207b5815622de9173bf5192d65b17dadfa010");
         assert(genesis.hashMerkleRoot == uint256S("0x68a8671d632277d04c8e60143214abca9b69cafa8e1b094d5f6ed18c04228baf"));
         assert(genesis.nBits == default_task.nInitialBits);
 

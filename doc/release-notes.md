@@ -1,3 +1,19 @@
+Qubitcoin Core Release Notes
+============================
+
+Notable changes
+---------------
+
+### `-daemon`
+
+`-daemon` works again. Computing the genesis block hash at startup initialised CUDA
+before the process forked, so the daemon died right after starting.
+
+---
+
+The rest of this file is the upstream Bitcoin Core 27.1 release notes, inherited
+with the fork and kept for reference.
+
 27.1 Release Notes
 =====================
 
