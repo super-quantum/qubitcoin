@@ -6,10 +6,17 @@
 #ifndef BITCOIN_PRIMITIVES_BLOCK_H
 #define BITCOIN_PRIMITIVES_BLOCK_H
 
+#include <pow/task_id.h>
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <uint256.h>
 #include <util/time.h>
+
+#include <ios>
+#include <vector>
+
+/** Maximum size of the task data a block header may carry. */
+static constexpr size_t MAX_BLOCK_TASK_DATA_SIZE = 256;
 
 /** Nodes collect new transactions into a block, hash them into a hash tree,
  * and scan through nonce values to make the block's hash satisfy proof-of-work
@@ -29,12 +36,22 @@ public:
     uint32_t nBits;
     uint32_t nNonce;
 
+    //! Solution data for the block's proof-of-work task. Not serialized for task 0.
+    std::vector<unsigned char> vTaskData;
+
     CBlockHeader()
     {
         SetNull();
     }
 
-    SERIALIZE_METHODS(CBlockHeader, obj) { READWRITE(obj.nVersion, obj.hashPrevBlock, obj.hashMerkleRoot, obj.nTime, obj.nBits, obj.nNonce); }
+    SERIALIZE_METHODS(CBlockHeader, obj)
+    {
+        READWRITE(obj.nVersion, obj.hashPrevBlock, obj.hashMerkleRoot, obj.nTime, obj.nBits, obj.nNonce);
+        if (DecodeTaskId(obj.nVersion) != POW_DEFAULT_TASK_ID) {
+            READWRITE(obj.vTaskData);
+            SER_READ(obj, if (obj.vTaskData.size() > MAX_BLOCK_TASK_DATA_SIZE) throw std::ios_base::failure("CBlockHeader::vTaskData too large"));
+        }
+    }
 
     void SetNull()
     {
@@ -44,6 +61,7 @@ public:
         nTime = 0;
         nBits = 0;
         nNonce = 0;
+        vTaskData.clear();
     }
 
     bool IsNull() const
@@ -110,6 +128,7 @@ public:
         block.nTime = nTime;
         block.nBits = nBits;
         block.nNonce = nNonce;
+        block.vTaskData = vTaskData;
         return block;
     }
 

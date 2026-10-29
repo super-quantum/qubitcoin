@@ -681,9 +681,24 @@ class CTransaction:
             % (self.version, repr(self.vin), repr(self.vout), repr(self.wit), self.nLockTime)
 
 
+# A block version whose top three bits are 010 holds a proof-of-work task id in bits 20-27;
+# every other version is task 0. Task 0 headers carry no task data.
+POW_TASK_ID_SHIFT = 20
+POW_TASK_ID_MASK = 0xFF << POW_TASK_ID_SHIFT
+POW_TASK_VERSION_MARKER_MASK = 0xE0000000
+POW_TASK_VERSION_MARKER = 0x40000000
+POW_DEFAULT_TASK_ID = 0
+
+
+def decode_task_id(nVersion):
+    if (nVersion & POW_TASK_VERSION_MARKER_MASK) != POW_TASK_VERSION_MARKER:
+        return POW_DEFAULT_TASK_ID
+    return (nVersion & POW_TASK_ID_MASK) >> POW_TASK_ID_SHIFT
+
+
 class CBlockHeader:
     __slots__ = ("hash", "hashMerkleRoot", "hashPrevBlock", "nBits", "nNonce",
-                 "nTime", "nVersion", "sha256")
+                 "nTime", "nVersion", "sha256", "vTaskData")
 
     def __init__(self, header=None):
         if header is None:
@@ -695,6 +710,7 @@ class CBlockHeader:
             self.nTime = header.nTime
             self.nBits = header.nBits
             self.nNonce = header.nNonce
+            self.vTaskData = header.vTaskData
             self.sha256 = header.sha256
             self.hash = header.hash
             self.calc_sha256()
@@ -706,6 +722,7 @@ class CBlockHeader:
         self.nTime = 0
         self.nBits = 0
         self.nNonce = 0
+        self.vTaskData = b""
         self.sha256 = None
         self.hash = None
 
@@ -716,6 +733,10 @@ class CBlockHeader:
         self.nTime = int.from_bytes(f.read(4), "little")
         self.nBits = int.from_bytes(f.read(4), "little")
         self.nNonce = int.from_bytes(f.read(4), "little")
+        if decode_task_id(self.nVersion) != POW_DEFAULT_TASK_ID:
+            self.vTaskData = deser_string(f)
+        else:
+            self.vTaskData = b""
         self.sha256 = None
         self.hash = None
 
@@ -727,6 +748,8 @@ class CBlockHeader:
         r += self.nTime.to_bytes(4, "little")
         r += self.nBits.to_bytes(4, "little")
         r += self.nNonce.to_bytes(4, "little")
+        if decode_task_id(self.nVersion) != POW_DEFAULT_TASK_ID:
+            r += ser_string(self.vTaskData)
         return r
 
     def calc_sha256(self):
@@ -738,6 +761,8 @@ class CBlockHeader:
             r += self.nTime.to_bytes(4, "little")
             r += self.nBits.to_bytes(4, "little")
             r += self.nNonce.to_bytes(4, "little")
+            if decode_task_id(self.nVersion) != POW_DEFAULT_TASK_ID:
+                r += ser_string(self.vTaskData)
             self.sha256 = uint256_from_str(hash256(r))
             self.hash = hash256(r)[::-1].hex()
 

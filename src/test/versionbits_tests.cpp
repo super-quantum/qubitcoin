@@ -456,4 +456,11 @@ BOOST_AUTO_TEST_CASE(versionbits_computeblockversion)
     }
 }
 
+BOOST_AUTO_TEST_CASE(versionbits_task_id_bits)
+{
+    for (int bit = 0; bit < VERSIONBITS_NUM_BITS; ++bit) {
+        BOOST_CHECK_EQUAL(IsPowTaskVersionBit(bit), bit >= 20 && bit < 28);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

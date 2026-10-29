@@ -6,6 +6,7 @@
 #define QUBITCOIN_POW_TASKS_H
 
 #include <consensus/params.h>
+#include <pow/task_id.h>
 
 #include <cstdint>
 #include <optional>
@@ -13,16 +14,6 @@
 class CBlockHeader;
 class CBlockIndex;
 class BlockValidationState;
-
-static constexpr int POW_TASK_ID_SHIFT = 20;
-static constexpr uint32_t POW_TASK_ID_MASK = 0xFFu << POW_TASK_ID_SHIFT;
-static constexpr uint8_t POW_DEFAULT_TASK_ID = 0;
-
-/** Extract the task id encoded in the block version (bits 20-27). */
-uint8_t DecodeTaskId(int32_t nVersion);
-
-/** Replace the task id bits in the supplied version. */
-int32_t EncodeTaskId(int32_t nVersion, uint8_t task_id);
 
 /** Look up the consensus definition for a given task id. */
 const Consensus::Params::PowTaskDefinition* LookupTaskDefinition(const Consensus::Params& params, uint8_t task_id);

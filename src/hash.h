@@ -168,7 +168,7 @@ private:
     QHash ctx;
 
 public:
-    explicit QHashWriter(uint32_t nTime): ctx(nTime) {}
+    explicit QHashWriter(uint32_t nTime, QHashRules rules = QHashRules::TimeGated): ctx(nTime, rules) {}
 
     void write(Span<const std::byte> src)
     {

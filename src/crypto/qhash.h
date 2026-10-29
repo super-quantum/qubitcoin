@@ -7,10 +7,21 @@
 #include <cuComplex.h>
 #include <custatevec.h>
 
+/**
+ * TimeGated applies the timestamp-activated rule changes (task 0). Current always uses the
+ * current circuit and never replaces the digest with the degenerate all-ones value, so the
+ * hash stays unique for tasks whose acceptance does not depend on it.
+ */
+enum class QHashRules {
+    TimeGated,
+    Current,
+};
+
 class QHash
 {
 private:
     const uint32_t nTime;
+    const QHashRules rules;
     CSHA256 ctx;
     custatevecHandle_t handle; // TODO: should probably be a singleton
     cuDoubleComplex* dStateVec;
@@ -29,7 +40,7 @@ private:
 public:
     static const size_t OUTPUT_SIZE = CSHA256::OUTPUT_SIZE;
 
-    explicit QHash(uint32_t nTime);
+    explicit QHash(uint32_t nTime, QHashRules rules = QHashRules::TimeGated);
     QHash& Write(const unsigned char* data, size_t len);
     void Finalize(unsigned char hash[OUTPUT_SIZE]);
     QHash& Reset();

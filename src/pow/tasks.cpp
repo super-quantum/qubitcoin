@@ -15,16 +15,6 @@
 #include <cassert>
 #include <utility>
 
-uint8_t DecodeTaskId(const int32_t nVersion)
-{
-    return (static_cast<uint32_t>(nVersion) & POW_TASK_ID_MASK) >> POW_TASK_ID_SHIFT;
-}
-
-int32_t EncodeTaskId(const int32_t nVersion, const uint8_t task_id)
-{
-    return (static_cast<uint32_t>(nVersion) & ~POW_TASK_ID_MASK) | (static_cast<uint32_t>(task_id) << POW_TASK_ID_SHIFT);
-}
-
 static bool TaskActiveAtHeight(const Consensus::Params::PowTaskDefinition& def, const int height)
 {
     if (height < def.activation_height) return false;

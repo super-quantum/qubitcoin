@@ -256,6 +256,8 @@ BITCOIN_CORE_H = \
   policy/rbf.h \
   policy/settings.h \
   pow.h \
+  pow/task_id.h \
+  pow/tasks.h \
   protocol.h \
   psbt.h \
   random.h \

@@ -8,6 +8,7 @@
 #include <arith_uint256.h>
 #include <chain.h>
 #include <consensus/params.h>
+#include <memusage.h>
 #include <net.h> // For NodeId
 #include <primitives/block.h>
 #include <uint256.h>
@@ -25,6 +26,7 @@ struct CompressedHeader {
     uint32_t nTime{0};
     uint32_t nBits{0};
     uint32_t nNonce{0};
+    std::vector<unsigned char> vTaskData;
 
     CompressedHeader()
     {
@@ -38,6 +40,7 @@ struct CompressedHeader {
         nTime = header.nTime;
         nBits = header.nBits;
         nNonce = header.nNonce;
+        vTaskData = header.vTaskData;
     }
 
     CBlockHeader GetFullHeader(const uint256& hash_prev_block) {
@@ -48,9 +51,28 @@ struct CompressedHeader {
         ret.nTime = nTime;
         ret.nBits = nBits;
         ret.nNonce = nNonce;
+        ret.vTaskData = vTaskData;
         return ret;
     };
+
+    //! Memory this header occupies, including the task data.
+    size_t MemoryUsage() const { return sizeof(*this) + memusage::DynamicUsage(vTaskData); }
 };
+
+/**
+ * Worst-case memory of one buffered header: the struct, the largest task data and its
+ * allocation overhead. The two constants below are computed from it using the simulation
+ * script in contrib/devtools/headerssync-params.py.
+ */
+constexpr size_t MAX_COMPRESSED_HEADER_BYTES{sizeof(CompressedHeader) + MAX_BLOCK_TASK_DATA_SIZE + 16};
+static_assert(MAX_COMPRESSED_HEADER_BYTES == 344, "presync constants were derived for 344 bytes per header");
+
+//! Store one header commitment per HEADER_COMMITMENT_PERIOD blocks.
+constexpr size_t HEADER_COMMITMENT_PERIOD{235};
+
+//! Only feed headers to validation once this many headers on top have been
+//! received and validated against commitments.
+constexpr size_t REDOWNLOAD_BUFFER_SIZE{5205}; // 5205/235 = ~22.1 commitments
 
 /** HeadersSyncState:
  *

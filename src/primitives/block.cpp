@@ -10,6 +10,9 @@
 
 uint256 CBlockHeader::GetHash() const
 {
+    if (DecodeTaskId(nVersion) != POW_DEFAULT_TASK_ID) {
+        return (QHashWriter{nTime, QHashRules::Current} << *this).GetHash();
+    }
     return (QHashWriter{nTime} << *this).GetHash();
 }
 

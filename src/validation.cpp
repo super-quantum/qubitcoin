@@ -3005,6 +3005,8 @@ void Chainstate::UpdateTip(const CBlockIndex* pindexNew)
     if (!m_chainman.IsInitialBlockDownload()) {
         const CBlockIndex* pindex = pindexNew;
         for (int bit = 0; bit < VERSIONBITS_NUM_BITS; bit++) {
+            // Bits reserved for the task id are never assigned to a deployment.
+            if (IsPowTaskVersionBit(bit)) continue;
             WarningBitsConditionChecker checker(m_chainman, bit);
             ThresholdState state = checker.GetStateFor(pindex, params.GetConsensus(), m_chainman.m_warningcache.at(bit));
             if (state == ThresholdState::ACTIVE || state == ThresholdState::LOCKED_IN) {
@@ -3909,6 +3911,16 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
 
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
+    // Task 0 carries no task data.
+    if (DecodeTaskId(block.nVersion) == POW_DEFAULT_TASK_ID && !block.vTaskData.empty()) {
+        return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-task-data", "task data present for default task");
+    }
+
+    // Other tasks need it, but a block template has none yet, so only check with fCheckPOW.
+    if (fCheckPOW && DecodeTaskId(block.nVersion) != POW_DEFAULT_TASK_ID && block.vTaskData.empty()) {
+        return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "missing-task-data", "non-default task header carries no witness");
+    }
+
     // Check proof of work matches claimed amount
     if (fCheckPOW && !CheckTaskProofOfWork(block, consensusParams)) {
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");

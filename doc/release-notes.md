@@ -4,6 +4,13 @@ Qubitcoin Core Release Notes
 Notable changes
 ---------------
 
+### Proof-of-work tasks
+
+- A block version whose top three bits are `010` carries a proof-of-work task id in
+  bits 20–27. Every other version, including those of all existing blocks, is task 0.
+- Blocks of tasks other than 0 carry task data in the header after `nNonce`, returned
+  as `taskdata` by `getblockheader` and `getblock`. Task 0 headers are unchanged.
+
 ### `-daemon`
 
 `-daemon` works again. Computing the genesis block hash at startup initialised CUDA

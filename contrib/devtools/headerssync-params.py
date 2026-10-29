@@ -105,8 +105,9 @@ ASSUME_CONVEX = True
 
 # System properties:
 
-# Headers in the redownload buffer are stored without prevhash. [bits]
-COMPACT_HEADER_SIZE = 48 * 8
+# Headers in the redownload buffer are stored without prevhash, with up to 256 bytes of
+# task data (MAX_COMPRESSED_HEADER_BYTES in src/headerssync.h). [bits]
+COMPACT_HEADER_SIZE = 344 * 8
 
 # How many bits a header uses in P2P protocol. [bits]
 NET_HEADER_SIZE = 81 * 8

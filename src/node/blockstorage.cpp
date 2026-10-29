@@ -128,6 +128,7 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 pindexNew->nTime          = diskindex.nTime;
                 pindexNew->nBits          = diskindex.nBits;
                 pindexNew->nNonce         = diskindex.nNonce;
+                pindexNew->vTaskData      = diskindex.vTaskData;
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
 
@@ -138,7 +139,12 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 header.nTime = diskindex.nTime;
                 header.nBits = diskindex.nBits;
                 header.nNonce = diskindex.nNonce;
-                if (!CheckTaskProofOfWork(header, consensusParams)) {
+                header.vTaskData = diskindex.vTaskData;
+                // Task 0's proof of work is the block hash, which was computed above.
+                const bool pow_ok{DecodeTaskId(header.nVersion) == POW_DEFAULT_TASK_ID ?
+                                      CheckProofOfWork(pindexNew->GetBlockHash(), header.nBits, consensusParams) :
+                                      CheckTaskProofOfWork(header, consensusParams)};
+                if (!pow_ok) {
                     LogError("%s: CheckTaskProofOfWork failed: %s\n", __func__, pindexNew->ToString());
                     return false;
                 }

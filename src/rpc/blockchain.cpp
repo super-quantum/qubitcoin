@@ -150,6 +150,7 @@ UniValue blockheaderToJSON(const CBlockIndex& tip, const CBlockIndex& blockindex
     result.pushKV("height", blockindex.nHeight);
     result.pushKV("version", blockindex.nVersion);
     result.pushKV("versionHex", strprintf("%08x", blockindex.nVersion));
+    if (!blockindex.vTaskData.empty()) result.pushKV("taskdata", HexStr(blockindex.vTaskData));
     result.pushKV("merkleroot", blockindex.hashMerkleRoot.GetHex());
     result.pushKV("time", blockindex.nTime);
     result.pushKV("mediantime", blockindex.GetMedianTimePast());
@@ -539,6 +540,8 @@ static RPCHelpMan getblockheader()
                             {RPCResult::Type::NUM, "height", "The block height or index"},
                             {RPCResult::Type::NUM, "version", "The block version"},
                             {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
+                    {RPCResult::Type::STR_HEX, "taskdata", /*optional=*/true, "Task-specific header data (only for blocks that do not use the default proof-of-work task)"},
+                            {RPCResult::Type::STR_HEX, "taskdata", /*optional=*/true, "Task-specific header data (only for blocks that do not use the default proof-of-work task)"},
                             {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
                             {RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME},
                             {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME},

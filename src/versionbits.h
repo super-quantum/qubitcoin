@@ -6,6 +6,7 @@
 #define BITCOIN_VERSIONBITS_H
 
 #include <chain.h>
+#include <pow/task_id.h>
 #include <sync.h>
 
 #include <map>
@@ -18,6 +19,10 @@ static const int32_t VERSIONBITS_TOP_BITS = 0x20000000UL;
 static const int32_t VERSIONBITS_TOP_MASK = 0xE0000000UL;
 /** Total bits available for versionbits */
 static const int32_t VERSIONBITS_NUM_BITS = 29;
+
+// The task id bits are inside the signalling range and clear of the top bits.
+static_assert((POW_TASK_ID_MASK & static_cast<uint32_t>(VERSIONBITS_TOP_MASK)) == 0);
+static_assert(POW_TASK_ID_SHIFT + POW_TASK_ID_BITS <= VERSIONBITS_NUM_BITS);
 
 /** BIP 9 defines a finite-state-machine to deploy a softfork in multiple stages.
  *  State transitions happen during retarget period if conditions are met

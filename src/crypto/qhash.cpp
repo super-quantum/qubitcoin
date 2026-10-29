@@ -27,7 +27,7 @@
 static const cuDoubleComplex matrixX[] = {
     {0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}};
 
-QHash::QHash(uint32_t nTime) : nTime(nTime), ctx(), handle(), dStateVec(), extraSize(0), extra(nullptr)
+QHash::QHash(uint32_t nTime, QHashRules rules) : nTime(nTime), rules(rules), ctx(), handle(), dStateVec(), extraSize(0), extra(nullptr)
 {
     custatevecCreate(&handle);
 
@@ -61,18 +61,19 @@ void QHash::runCircuit(const std::array<unsigned char, 2 * CSHA256::OUTPUT_SIZE>
 {
     static const custatevecPauli_t pauliY[] = {CUSTATEVEC_PAULI_Y};
     static const custatevecPauli_t pauliZ[] = {CUSTATEVEC_PAULI_Z};
+    const int angleOffset = (rules == QHashRules::Current || nTime >= 1758762000) ? 1 : 0;
     for (std::size_t l{0}; l < nLayers; ++l) {
         for (std::size_t i{0}; i < nQubits; ++i) {
             const int32_t target = i;
             // RY gates
             HANDLE_CUSTATEVEC_ERROR(custatevecApplyPauliRotation(
                 handle, dStateVec, CUDA_C_64F, nQubits,
-                -(2 * data[(2 * l * nQubits + i) % data.size()] + (nTime >= 1758762000)) * std::numbers::pi / 32, pauliY,
+                -(2 * data[(2 * l * nQubits + i) % data.size()] + angleOffset) * std::numbers::pi / 32, pauliY,
                 &target, 1, nullptr, nullptr, 0));
             // RZ gates
             HANDLE_CUSTATEVEC_ERROR(custatevecApplyPauliRotation(
                 handle, dStateVec, CUDA_C_64F, nQubits,
-                -(2 * data[((2 * l + 1) * nQubits + i) % data.size()] + (nTime >= 1758762000)) * std::numbers::pi / 32, pauliZ,
+                -(2 * data[((2 * l + 1) * nQubits + i) % data.size()] + angleOffset) * std::numbers::pi / 32, pauliZ,
                 &target, 1, nullptr, nullptr, 0));
         }
 
@@ -156,9 +157,10 @@ void QHash::Finalize(unsigned char hash[OUTPUT_SIZE])
         }
     }
 
-    if ((zeroes == nQubits * sizeof(fixedFloat) && nTime >= 1753105444) ||
-        (zeroes >= nQubits * sizeof(fixedFloat) * 3 / 4 && nTime >= 1753305380) ||
-        (zeroes >= nQubits * sizeof(fixedFloat) * 1 / 4 && nTime >= 1754220531)) {
+    if (rules == QHashRules::TimeGated &&
+        ((zeroes == nQubits * sizeof(fixedFloat) && nTime >= 1753105444) ||
+         (zeroes >= nQubits * sizeof(fixedFloat) * 3 / 4 && nTime >= 1753305380) ||
+         (zeroes >= nQubits * sizeof(fixedFloat) * 1 / 4 && nTime >= 1754220531))) {
         for (std::size_t i = 0; i < OUTPUT_SIZE; ++i)
             hash[i] = 255;
         return;
