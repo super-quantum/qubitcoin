@@ -9,10 +9,10 @@
 #include <hash.h>
 #include <pow.h>
 #include <primitives/block.h>
-#include <validation.h>
 
 #include <algorithm>
 #include <cassert>
+#include <optional>
 #include <utility>
 
 static bool TaskActiveAtHeight(const Consensus::Params::PowTaskDefinition& def, const int height)
@@ -49,9 +49,19 @@ size_t CountActiveTasks(const Consensus::Params& params, const int height)
 
 int64_t TargetSpacingPerTaskAtHeight(const Consensus::Params& params, const int height)
 {
-    const auto active = CountActiveTasks(params, height);
-    assert(active > 0);
+    // ValidatePowTasks rules out a height with no active task.
+    const auto active = std::max<size_t>(CountActiveTasks(params, height), 1);
     return params.nPowTargetSpacing * active;
+}
+
+std::optional<size_t> TaskSlot(const Consensus::Params& params, const uint8_t task_id)
+{
+    size_t slot = 0;
+    for (const auto& entry : params.powTasks) {
+        if (entry.first == task_id) return slot;
+        ++slot;
+    }
+    return std::nullopt;
 }
 
 static bool CheckQhashSolution(const CBlockHeader& header, const Consensus::Params& params)
@@ -73,32 +83,51 @@ bool CheckTaskProofOfWork(const CBlockHeader& header, const Consensus::Params& p
     }
 }
 
-const CBlockIndex* FindPreviousTaskBlock(const CBlockIndex* start, const uint8_t task_id)
+const CBlockIndex* FindPreviousTaskBlock(const CBlockIndex* start, const uint8_t task_id, const Consensus::Params& params)
 {
-    const CBlockIndex* cursor = start;
-    while (cursor) {
-        if (cursor->nPowTaskId == task_id) return cursor;
-        cursor = cursor->pprev;
+    if (!start) return nullptr;
+
+    const auto slot = TaskSlot(params, task_id);
+    if (!slot) {
+        for (const CBlockIndex* cursor = start; cursor; cursor = cursor->pprev) {
+            if (cursor->nPowTaskId == task_id) return cursor;
+        }
+        return nullptr;
     }
-    return nullptr;
+
+    const int32_t height = start->m_prev_task_height[*slot];
+    if (height < 0) return nullptr;
+    return start->GetAncestor(height);
 }
 
 void PopulateBlockTaskData(CBlockIndex& index, const Consensus::Params& params)
 {
     index.nPowTaskId = DecodeTaskId(index.nVersion);
 
-    const int height = index.nHeight;
-    const auto* def = LookupTaskDefinition(params, index.nPowTaskId);
-    if (!def) return;
-    if (!TaskActiveAtHeight(*def, height)) return;
-
-
+    // The parent is always populated first (AddToBlockIndex, and LoadBlockIndex walks by height).
     if (index.pprev) {
-        const auto taskPrev = FindPreviousTaskBlock(index.pprev, index.nPowTaskId);
-        if (taskPrev) 
-            index.nTaskSpacingSum = taskPrev->nTaskSpacingSum + TargetSpacingPerTaskAtHeight(params, taskPrev->nHeight + 1);
-        else
-            index.nTaskSpacingSum = TargetSpacingPerTaskAtHeight(params, def->activation_height);
+        std::copy(std::begin(index.pprev->m_prev_task_height),
+                  std::end(index.pprev->m_prev_task_height),
+                  std::begin(index.m_prev_task_height));
+    } else {
+        std::fill(std::begin(index.m_prev_task_height), std::end(index.m_prev_task_height), -1);
     }
 
+    const auto* def = LookupTaskDefinition(params, index.nPowTaskId);
+    if (!def) return;
+
+    if (!TaskActiveAtHeight(*def, index.nHeight)) return;
+
+    if (index.pprev) {
+        const auto taskPrev = FindPreviousTaskBlock(index.pprev, index.nPowTaskId, params);
+        if (taskPrev) {
+            index.nTaskSpacingSum = taskPrev->nTaskSpacingSum + TargetSpacingPerTaskAtHeight(params, taskPrev->nHeight + 1);
+        } else {
+            index.nTaskSpacingSum = TargetSpacingPerTaskAtHeight(params, def->activation_height);
+        }
+    }
+
+    if (const auto slot = TaskSlot(params, index.nPowTaskId)) {
+        index.m_prev_task_height[*slot] = index.nHeight;
+    }
 }

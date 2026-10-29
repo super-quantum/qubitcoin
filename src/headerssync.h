@@ -10,6 +10,7 @@
 #include <consensus/params.h>
 #include <memusage.h>
 #include <net.h> // For NodeId
+#include <pow/schedule.h>
 #include <primitives/block.h>
 #include <uint256.h>
 #include <util/bitdeque.h>
@@ -264,6 +265,9 @@ private:
     /** Height of m_last_header_received */
     int64_t m_current_height{0};
 
+    /** The difficulty schedule as of m_last_header_received. */
+    PowSchedule m_presync_schedule;
+
     /** During phase 2 (REDOWNLOAD), we buffer redownloaded headers in memory
      *  until enough commitments have been verified; those are stored in
      *  m_redownloaded_headers */
@@ -286,6 +290,9 @@ private:
 
     /** The accumulated work on the redownloaded chain. */
     arith_uint256 m_redownload_chain_work;
+
+    /** The difficulty schedule as of the last redownloaded header. */
+    PowSchedule m_redownload_schedule;
 
     /** Set this to true once we encounter the target blockheader during phase
      * 2 (REDOWNLOAD). At this point, we can process and store all remaining

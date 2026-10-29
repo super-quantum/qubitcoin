@@ -383,8 +383,12 @@ bool HasValidProofOfWork(const std::vector<CBlockHeader>& headers, const Consens
 /** Check if a block has been mutated (with respect to its merkle root and witness commitments). */
 bool IsBlockMutated(const CBlock& block, bool check_witness_root);
 
-/** Return the sum of the claimed work on a given set of headers. No verification of PoW is done. */
-arith_uint256 CalculateClaimedHeadersWork(const std::vector<CBlockHeader>& headers);
+/**
+ * Return the chain work the given headers would add on top of `prev`. No verification of
+ * PoW is done, but counting stops at the first header whose nBits are not what the
+ * difficulty schedule demands.
+ */
+arith_uint256 CalculateClaimedHeadersWork(const CBlockIndex& prev, const std::vector<CBlockHeader>& headers, const Consensus::Params& params);
 
 enum class VerifyDBResult {
     SUCCESS,

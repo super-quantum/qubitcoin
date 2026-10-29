@@ -17,6 +17,7 @@
 #include <kernel/notifications_interface.h>
 #include <logging.h>
 #include <pow.h>
+#include <pow/schedule.h>
 #include <pow/tasks.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -238,7 +239,7 @@ CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block, CBlockInde
     }
     PopulateBlockTaskData(*pindexNew, GetConsensus());
     pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
-    pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
+    pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockCredit(*pindexNew, GetConsensus());
     pindexNew->RaiseValidity(BLOCK_VALID_TREE);
     if (best_header == nullptr || best_header->nChainWork < pindexNew->nChainWork) {
         best_header = pindexNew;
@@ -453,7 +454,7 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
         }
         previous_index = pindex;
         PopulateBlockTaskData(*pindex, GetConsensus());
-        pindex->nChainWork = (pindex->pprev ? pindex->pprev->nChainWork : 0) + GetBlockProof(*pindex);
+        pindex->nChainWork = (pindex->pprev ? pindex->pprev->nChainWork : 0) + GetBlockCredit(*pindex, GetConsensus());
         pindex->nTimeMax = (pindex->pprev ? std::max(pindex->pprev->nTimeMax, pindex->nTime) : pindex->nTime);
 
         // We can link the chain of blocks for which we've received transactions at some point, or

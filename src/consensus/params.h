@@ -9,6 +9,7 @@
 #include <uint256.h>
 
 #include <chrono>
+#include <cstddef>
 #include <limits>
 #include <map>
 #include <optional>
@@ -69,6 +70,9 @@ struct BIP9Deployment {
      *  prior to deploying it on some or all networks. */
     static constexpr int64_t NEVER_ACTIVE = -2;
 };
+
+/** Maximum number of proof-of-work tasks a network may register. */
+static constexpr size_t MAX_TRACKED_POW_TASKS{4};
 
 /**
  * Parameters that influence chain consensus.
@@ -155,10 +159,14 @@ struct Params {
         int activation_height{0};
         std::optional<int> deactivation_height;
         uint32_t nInitialBits{0}; // Initial difficulty (anchor nBits) for this task
-        
-        // Cached anchor timestamp (parent of anchor block, or anchor itself if genesis)
-        // Set to nullopt initially, populated on first difficulty calculation
-        std::optional<int64_t> anchor_time;
+
+        /**
+         * Scale applied to this task's work in the chain-work credit (GetBlockCredit).
+         * Set so the anchor's scaled work equals task 0's, which keeps the credit
+         * continuous when the task activates.
+         */
+        uint32_t work_scale_num{1};
+        uint32_t work_scale_den{1};
     };
     
     /** Registered proof-of-work tasks keyed by task id. */

@@ -35,13 +35,6 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&
  */
 bool PermittedDifficultyTransition(const Consensus::Params& params, int64_t height, uint32_t old_nbits, uint32_t new_nbits);
 
-/**
- * Bitcoin cash's difficulty adjustment mechanism.
- */
-uint32_t GetNextCashWorkRequired(const CBlockIndex *pindexPrev,
-                                 const CBlockHeader *pblock,
-                                 const Consensus::Params &params);
-
 arith_uint256 CalculateASERT(const arith_uint256 &refTarget,
                              const int64_t nTimeDiff,
                              const int64_t nIdealTimeDiff,

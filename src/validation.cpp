@@ -37,6 +37,7 @@
 #include <policy/settings.h>
 #include <policy/v3_policy.h>
 #include <pow.h>
+#include <pow/schedule.h>
 #include <pow/tasks.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -2021,7 +2022,7 @@ void Chainstate::CheckForkWarningConditions()
         return;
     }
 
-    if (m_chainman.m_best_invalid && m_chainman.m_best_invalid->nChainWork > m_chain.Tip()->nChainWork + (GetBlockProof(*m_chain.Tip()) * 6)) {
+    if (m_chainman.m_best_invalid && m_chainman.m_best_invalid->nChainWork > m_chain.Tip()->nChainWork + (BlockCredit(*m_chain.Tip()) * 6)) {
         LogPrintf("%s: Warning: Found invalid chain at least ~6 blocks longer than our best chain.\nChain state database corruption likely.\n", __func__);
         m_chainman.GetNotifications().warningSet(
             kernel::Warning::LARGE_WORK_INVALID_CHAIN,
@@ -4151,12 +4152,14 @@ bool IsBlockMutated(const CBlock& block, bool check_witness_root)
     return false;
 }
 
-arith_uint256 CalculateClaimedHeadersWork(const std::vector<CBlockHeader>& headers)
+arith_uint256 CalculateClaimedHeadersWork(const CBlockIndex& prev, const std::vector<CBlockHeader>& headers, const Consensus::Params& params)
 {
     arith_uint256 total_work{0};
+    PowSchedule schedule{PowSchedule::FromIndex(prev, params)};
     for (const CBlockHeader& header : headers) {
-        CBlockIndex dummy(header);
-        total_work += GetBlockProof(dummy);
+        if (!schedule.Expects(header, params)) break;
+        total_work += GetBlockCredit(schedule, header.GetBlockTime(), params);
+        schedule.Advance(header, params);
     }
     return total_work;
 }

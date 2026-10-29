@@ -256,6 +256,7 @@ BITCOIN_CORE_H = \
   policy/rbf.h \
   policy/settings.h \
   pow.h \
+  pow/schedule.h \
   pow/task_id.h \
   pow/tasks.h \
   protocol.h \
@@ -460,6 +461,7 @@ libbitcoin_node_a_SOURCES = \
   policy/rbf.cpp \
   policy/settings.cpp \
   pow.cpp \
+  pow/schedule.cpp \
   pow/tasks.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
@@ -971,6 +973,7 @@ libbitcoinkernel_la_SOURCES = \
   policy/rbf.cpp \
   policy/settings.cpp \
   pow.cpp \
+  pow/schedule.cpp \
   pow/tasks.cpp \
   primitives/block.cpp \
   primitives/transaction.cpp \

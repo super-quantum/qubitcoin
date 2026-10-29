@@ -8,102 +8,10 @@
 #include <arith_uint256.h>
 #include <chain.h>
 #include <consensus/params.h>
-#include <pow/tasks.h>
+#include <pow/schedule.h>
+#include <pow/task_id.h>
 #include <primitives/block.h>
 #include <uint256.h>
-
-/**
- * Compute the next required proof of work using an absolutely scheduled
- * exponentially weighted target (ASERT) for a specific task.
- *
- * With per-task ASERT, each task maintains its own difficulty timeline. We use
- * cumulative ideal spacing (nTaskSpacingSum) rather than height * constant_spacing
- * to handle the varying number of active tasks over time.
- *
- * The difficulty adjusts exponentially based on how far ahead or behind schedule
- * the task-specific chain is. For every nHalfLife seconds of deviation, we double
- * or halve the difficulty.
- */
-static uint32_t GetNextASERTWorkRequired(const CBlockIndex* pindexPrev,
-                                         const CBlockHeader* pblock,
-                                         const Consensus::Params& params,
-                                         uint8_t task_id) noexcept
-{
-    // Cannot handle genesis block
-    assert(pindexPrev != nullptr);
-    
-    auto* taskDef = const_cast<Consensus::Params::PowTaskDefinition*>(
-        LookupTaskDefinition(params, task_id));
-    assert(taskDef);
-
-    // Special difficulty rule for testnet
-    // If the new block's timestamp is more than 2 * 10 minutes then allow
-    // mining of a min-difficulty block.
-    if (params.fPowAllowMinDifficultyBlocks &&
-        (pblock->GetBlockTime() >
-         pindexPrev->GetBlockTime() + 2 * params.nPowTargetSpacing)) {
-        return UintToArith256(params.powLimit).GetCompact();
-    }
-
-    const arith_uint256 powLimit = UintToArith256(params.powLimit);
-    
-    // Find the most recent block that solved this same task
-    const CBlockIndex* pindexPrevTask = FindPreviousTaskBlock(pindexPrev, task_id);
-    
-    // If no previous block solved this task, we're at the anchor itself
-    // In this case, use the initial difficulty from the task definition
-    if (!pindexPrevTask) {
-        return taskDef->nInitialBits;
-    }
-    
-    // Get or compute the anchor timestamp (cached in task definition)
-    if (!taskDef->anchor_time.has_value()) {
-        // First time computing difficulty for this task - find and cache anchor timestamp
-        const CBlockIndex* pindexAnchor = nullptr;
-        
-        if (task_id == POW_DEFAULT_TASK_ID) {
-            // For default task, anchor is genesis
-            pindexAnchor = pindexPrev->GetAncestor(0);
-        } else {
-            // For other tasks, anchor is at activation_height
-            pindexAnchor = pindexPrev->GetAncestor(taskDef->activation_height);
-        }
-        
-        assert(pindexAnchor);
-        
-        // Cache the anchor timestamp (use parent's time, or anchor's own time if genesis)
-        taskDef->anchor_time = pindexAnchor->pprev ? 
-                               pindexAnchor->pprev->GetBlockTime() : 
-                               pindexAnchor->GetBlockTime();
-    }
-    
-    const int64_t anchorTime = *taskDef->anchor_time;
-    
-    // Anchor target is the initial difficulty for this task
-    const arith_uint256 refBlockTarget = arith_uint256().SetCompact(taskDef->nInitialBits);
-    
-    // Calculate time difference from anchor to current block parent
-    const int64_t nTimeDiff = pindexPrev->GetBlockTime() - anchorTime;
-    
-    // Calculate ideal time using cumulative spacing sums:
-    // - Expected spacing from anchor to previous task block = pindexPrevTask->nTaskSpacingSum
-    // - We need to add the spacing for the new block we're computing difficulty for
-    // - IMPORTANT: Using the spacing at pindexPrevTask's height, not current height
-    //   This keeps difficulty stable for a task even if other tasks activate/deactivate
-    //   between this task's blocks.
-    const int64_t blockSpacing = TargetSpacingPerTaskAtHeight(params, pindexPrevTask->nHeight + 1);
-    const int64_t nIdealTimeDiff = pindexPrevTask->nTaskSpacingSum + blockSpacing;
-    
-    // Calculate ASERT target adjustment
-    arith_uint256 nextTarget = CalculateASERT(refBlockTarget,
-                                              nTimeDiff,
-                                              nIdealTimeDiff,
-                                              powLimit,
-                                              params.nASERTHalfLife);
-    
-    return nextTarget.GetCompact();
-}
-
 
 // ASERT calculation function.
 // Clamps to powLimit.
@@ -190,17 +98,8 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
     // GetNextWorkRequired should never be called on the genesis block
     assert(pindexLast != nullptr);
 
-    // Special rule for regtest: we never retarget.
-    if (params.fPowNoRetargeting) {
-        return pindexLast->nBits;
-    }
-
-    // Extract the task ID from the block header
-    const uint8_t task_id = DecodeTaskId(pblock->nVersion);
-    
-    // Calculate difficulty for this specific task
-    auto nextWork = GetNextASERTWorkRequired(pindexLast, pblock, params, task_id);
-    return nextWork;
+    return PowSchedule::FromIndex(*pindexLast, params)
+        .NextBits(DecodeTaskId(pblock->nVersion), pblock->GetBlockTime(), params);
 }
 
 unsigned int CalculateNextWorkRequired(const CBlockIndex* pindexLast, int64_t nFirstBlockTime, const Consensus::Params& params)

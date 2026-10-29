@@ -10,6 +10,10 @@ Notable changes
   bits 20–27. Every other version, including those of all existing blocks, is task 0.
 - Blocks of tasks other than 0 carry task data in the header after `nNonce`, returned
   as `taskdata` by `getblockheader` and `getblock`. Task 0 headers are unchanged.
+- Each block's chain work is the geometric mean of the scheduled work of all active
+  tasks. With only task 0 active, as on mainnet, chain work is unchanged.
+- Headers received during initial sync must have exactly the `nBits` the difficulty
+  schedule requires.
 
 ### `-daemon`
 

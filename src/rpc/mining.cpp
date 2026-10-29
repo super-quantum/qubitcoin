@@ -531,7 +531,7 @@ static RPCHelpMan getmininginfo()
         UniValue task_info(UniValue::VOBJ);
         task_info.pushKV("id", (int)task_id);
         task_info.pushKV("name", taskDef.name);
-        task_info.pushKV("difficulty", GetDifficulty(*FindPreviousTaskBlock(tip, task_id)));
+        task_info.pushKV("difficulty", GetDifficulty(*FindPreviousTaskBlock(tip, task_id, consensusParams)));
         task_info.pushKV("active", IsTaskActive(consensusParams, task_id, next_height));
         task_info.pushKV("activation_height", taskDef.activation_height);
         if (taskDef.deactivation_height) {

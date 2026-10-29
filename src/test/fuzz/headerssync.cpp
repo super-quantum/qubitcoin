@@ -2,6 +2,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <headerssync.h>
+#include <pow/tasks.h>
 #include <test/fuzz/fuzz.h>
 #include <test/fuzz/util.h>
 #include <test/util/setup_common.h>
@@ -53,6 +54,7 @@ FUZZ_TARGET(headers_sync_state, .init = initialize_headers_sync_state_fuzz)
 
     CBlockHeader genesis_header{Params().GenesisBlock()};
     CBlockIndex start_index(genesis_header);
+    PopulateBlockTaskData(start_index, Params().GetConsensus());
 
     if (mock_time < start_index.GetMedianTimePast()) return;
     SetMockTime(mock_time);
@@ -108,7 +110,7 @@ FUZZ_TARGET(headers_sync_state, .init = initialize_headers_sync_state_fuzz)
 
                     // If we get to redownloading, the presynced headers need
                     // to have the min amount of work on them.
-                    assert(CalculateClaimedHeadersWork(all_headers) >= min_work);
+                    assert(CalculateClaimedHeadersWork(start_index, all_headers, Params().GetConsensus()) >= min_work);
                 }
             }
 

@@ -20,7 +20,8 @@ HeadersSyncState::HeadersSyncState(NodeId id, const Consensus::Params& consensus
     m_minimum_required_work(minimum_required_work),
     m_current_chain_work(chain_start->nChainWork),
     m_last_header_received(m_chain_start->GetBlockHeader()),
-    m_current_height(chain_start->nHeight)
+    m_current_height(chain_start->nHeight),
+    m_presync_schedule(PowSchedule::FromIndex(*chain_start, consensus_params))
 {
     // Estimate the number of blocks that could possibly exist on the peer's
     // chain *right now* using 6 blocks/second (fastest blockrate given the MTP
@@ -158,6 +159,7 @@ bool HeadersSyncState::ValidateAndStoreHeadersCommitments(const std::vector<CBlo
         m_redownload_buffer_first_prev_hash = m_chain_start->GetBlockHash();
         m_redownload_buffer_last_hash = m_chain_start->GetBlockHash();
         m_redownload_chain_work = m_chain_start->nChainWork;
+        m_redownload_schedule = PowSchedule::FromIndex(*m_chain_start, m_consensus_params);
         m_download_state = State::REDOWNLOAD;
         LogPrint(BCLog::NET, "Initial headers sync transition with peer=%d: reached sufficient work at height=%i, redownloading from height=%i\n", m_id, m_current_height, m_redownload_buffer_last_height);
     }
@@ -171,14 +173,10 @@ bool HeadersSyncState::ValidateAndProcessSingleHeader(const CBlockHeader& curren
 
     int next_height = m_current_height + 1;
 
-    // Verify that the difficulty isn't growing too fast; an adversary with
-    // limited hashing capability has a greater chance of producing a high
-    // work chain if they compress the work into as few blocks as possible,
-    // so don't let anyone give a chain that would violate the difficulty
-    // adjustment maximum.
-    if (!PermittedDifficultyTransition(m_consensus_params, next_height,
-                m_last_header_received.nBits, current.nBits)) {
-        LogPrint(BCLog::NET, "Initial headers sync aborted with peer=%d: invalid difficulty transition at height=%i (presync phase)\n", m_id, next_height);
+    // Verify that the difficulty is exactly what the schedule demands. The work credited
+    // below is computed from the schedule, not from the header's nBits.
+    if (!m_presync_schedule.Expects(current, m_consensus_params)) {
+        LogPrint(BCLog::NET, "Initial headers sync aborted with peer=%d: invalid difficulty at height=%i (presync phase)\n", m_id, next_height);
         return false;
     }
 
@@ -195,7 +193,8 @@ bool HeadersSyncState::ValidateAndProcessSingleHeader(const CBlockHeader& curren
         }
     }
 
-    m_current_chain_work += GetBlockProof(CBlockIndex(current));
+    m_current_chain_work += GetBlockCredit(m_presync_schedule, current.GetBlockTime(), m_consensus_params);
+    m_presync_schedule.Advance(current, m_consensus_params);
     m_last_header_received = current;
     m_current_height = next_height;
 
@@ -216,22 +215,15 @@ bool HeadersSyncState::ValidateAndStoreRedownloadedHeader(const CBlockHeader& he
         return false;
     }
 
-    // Check that the difficulty adjustments are within our tolerance:
-    uint32_t previous_nBits{0};
-    if (!m_redownloaded_headers.empty()) {
-        previous_nBits = m_redownloaded_headers.back().nBits;
-    } else {
-        previous_nBits = m_chain_start->nBits;
-    }
-
-    if (!PermittedDifficultyTransition(m_consensus_params, next_height,
-                previous_nBits, header.nBits)) {
-        LogPrint(BCLog::NET, "Initial headers sync aborted with peer=%d: invalid difficulty transition at height=%i (redownload phase)\n", m_id, next_height);
+    // Check the difficulty against the schedule, as in presync:
+    if (!m_redownload_schedule.Expects(header, m_consensus_params)) {
+        LogPrint(BCLog::NET, "Initial headers sync aborted with peer=%d: invalid difficulty at height=%i (redownload phase)\n", m_id, next_height);
         return false;
     }
 
     // Track work on the redownloaded chain
-    m_redownload_chain_work += GetBlockProof(CBlockIndex(header));
+    m_redownload_chain_work += GetBlockCredit(m_redownload_schedule, header.GetBlockTime(), m_consensus_params);
+    m_redownload_schedule.Advance(header, m_consensus_params);
 
     if (m_redownload_chain_work >= m_minimum_required_work) {
         m_process_all_remaining_headers = true;

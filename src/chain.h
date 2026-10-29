@@ -206,6 +206,10 @@ public:
     //! (memory only) Cumulative ideal spacing (seconds) for this task up to and including this block.
     int64_t nTaskSpacingSum{0};
 
+    //! (memory only) Height of the most recent block at or below this one solving each
+    //! task, indexed by TaskSlot, or -1 if there is none.
+    int32_t m_prev_task_height[Consensus::MAX_TRACKED_POW_TASKS]{-1, -1, -1, -1};
+
     explicit CBlockIndex(const CBlockHeader& block)
         : nVersion{block.nVersion},
           hashMerkleRoot{block.hashMerkleRoot},
@@ -356,6 +360,11 @@ protected:
 };
 
 arith_uint256 GetBlockProof(const CBlockIndex& block);
+/** The chain work `block` added to its parent's (see GetBlockCredit). */
+inline arith_uint256 BlockCredit(const CBlockIndex& block)
+{
+    return block.pprev ? block.nChainWork - block.pprev->nChainWork : GetBlockProof(block);
+}
 /** Return the time it would take to redo the work difference between from and to, assuming the current hashrate corresponds to the difficulty at tip, in seconds. */
 int64_t GetBlockProofEquivalentTime(const CBlockIndex& to, const CBlockIndex& from, const CBlockIndex& tip, const Consensus::Params&);
 /** Find the forking point between two chain tips. */

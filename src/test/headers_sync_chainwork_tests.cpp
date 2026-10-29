@@ -143,4 +143,38 @@ BOOST_AUTO_TEST_CASE(headers_sync_state)
     BOOST_CHECK(result.success);
 }
 
+BOOST_AUTO_TEST_CASE(headers_sync_off_schedule)
+{
+    const CBlock& genesis{Params().GenesisBlock()};
+    const Consensus::Params& consensus{Params().GetConsensus()};
+
+    std::vector<CBlockHeader> good;
+    GenerateHeaders(good, 3, genesis.GetHash(), genesis.nVersion, genesis.nTime,
+            ArithToUint256(2), genesis.nBits);
+    // Regtest never retargets; these claim an easier target than genesis.
+    std::vector<CBlockHeader> bad;
+    GenerateHeaders(bad, 2, good.back().GetHash(), genesis.nVersion, good.back().nTime,
+            ArithToUint256(2), 0x207fffff);
+    std::vector<CBlockHeader> all{good};
+    all.insert(all.end(), bad.begin(), bad.end());
+
+    const CBlockIndex* chain_start = WITH_LOCK(::cs_main, return m_node.chainman->m_blockman.LookupBlockIndex(genesis.GetHash()));
+
+    // Each regtest block is credited 2; counting stops at the first bad header.
+    BOOST_CHECK(CalculateClaimedHeadersWork(*chain_start, good, consensus) == arith_uint256{6});
+    BOOST_CHECK(CalculateClaimedHeadersWork(*chain_start, all, consensus) == arith_uint256{6});
+
+    const arith_uint256 unreachable{arith_uint256{1} << 200};
+    HeadersSyncState on_schedule(0, consensus, chain_start, unreachable);
+    auto result = on_schedule.ProcessNextHeaders(good, /*full_headers_message=*/true);
+    BOOST_CHECK(result.success);
+    BOOST_CHECK(on_schedule.GetState() == HeadersSyncState::State::PRESYNC);
+    BOOST_CHECK(on_schedule.GetPresyncWork() == chain_start->nChainWork + 6);
+
+    HeadersSyncState off_schedule(0, consensus, chain_start, unreachable);
+    result = off_schedule.ProcessNextHeaders(all, /*full_headers_message=*/true);
+    BOOST_CHECK(!result.success);
+    BOOST_CHECK(off_schedule.GetState() == HeadersSyncState::State::FINAL);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

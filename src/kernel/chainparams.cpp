@@ -13,6 +13,7 @@
 #include <hash.h>
 #include <kernel/messagestartchars.h>
 #include <logging.h>
+#include <pow/tasks.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/interpreter.h>
@@ -122,7 +123,6 @@ public:
             .activation_height = 0,
             .deactivation_height = std::nullopt,
             .nInitialBits = 0x1e05ffff,
-            .anchor_time = std::nullopt
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
@@ -154,6 +154,8 @@ public:
         nPruneAfterHeight = 100000;
         m_assumed_blockchain_size = 600;
         m_assumed_chain_state_size = 10;
+
+        ValidatePowTasks(consensus);
 
         genesis = CreateGenesisBlock(1730075215, 2092524032, 0x1e05ffff, 4, 50 * COIN);
         // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
@@ -256,7 +258,6 @@ public:
             .activation_height = 0,
             .deactivation_height = std::nullopt,
             .nInitialBits = 0x1d00ffff,
-            .anchor_time = std::nullopt
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
@@ -283,6 +284,8 @@ public:
         nPruneAfterHeight = 1000;
         m_assumed_blockchain_size = 42;
         m_assumed_chain_state_size = 3;
+
+        ValidatePowTasks(consensus);
 
         genesis = CreateGenesisBlock(1296688602, 414098458, 0x1d00ffff, 1, 50 * COIN);
         // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
@@ -402,7 +405,6 @@ public:
             .activation_height = 0,
             .deactivation_height = std::nullopt,
             .nInitialBits = 0x1e0377ae,
-            .anchor_time = std::nullopt
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
@@ -428,6 +430,8 @@ public:
 
         nDefaultPort = 38333;
         nPruneAfterHeight = 1000;
+
+        ValidatePowTasks(consensus);
 
         genesis = CreateGenesisBlock(1598918400, 52613770, 0x1e0377ae, 1, 50 * COIN);
         // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
@@ -491,7 +495,6 @@ public:
             .activation_height = 0,
             .deactivation_height = std::nullopt,
             .nInitialBits = 0x207ffffe,
-            .anchor_time = std::nullopt
         };
         consensus.powTasks.clear();
         consensus.powTasks.emplace(default_task.id, default_task);
@@ -543,6 +546,8 @@ public:
             consensus.vDeployments[deployment_pos].nTimeout = version_bits_params.timeout;
             consensus.vDeployments[deployment_pos].min_activation_height = version_bits_params.min_activation_height;
         }
+
+        ValidatePowTasks(consensus);
 
         genesis = CreateGenesisBlock(1723726478, 3, 0x207ffffe, 1, 50 * COIN);
         // Not computed: hashing would initialise CUDA before -daemon forks. Checked in chainparams_tests.
