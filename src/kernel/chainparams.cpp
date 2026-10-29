@@ -563,14 +563,14 @@ public:
 
         checkpointData = {
             {
-                {0, uint256S("0x688a3e912f582fa20d65822bf3b334e9ec0bcaae698ee32819e3fdf191dbcd8f")},
+                {0, uint256S("0x1026bc1ac397550a7ef728ef5a9207b5815622de9173bf5192d65b17dadfa010")},
             }};
 
         m_assumeutxo_data = {
             {.height = 110,
              .hash_serialized = AssumeutxoHash{uint256S("0x6657b736d4fe4db0cbc796789e812d5dba7f5c143764b1b6905612f1830609d1")},
              .nChainTx = 111,
-             .blockhash = uint256S("0x696e92821f65549c7ee134edceeeeaaa4105647a3c4fd9f298c0aec0ab50425c")},
+             .blockhash = uint256S("0x23c2f1687ab8cd6fb373440e9d1760bf41086a0b21cd91be660666c99972aca3")},
             {// For use by test/functional/feature_assumeutxo.py
              .height = 299,
              .hash_serialized = AssumeutxoHash{uint256S("0xa4bf3407ccb2cc0145c49ebba8fa91199f8a3903daf0883875941497d2493c27")},
