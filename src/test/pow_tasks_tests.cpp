@@ -161,6 +161,24 @@ BOOST_AUTO_TEST_CASE(task_spacing_sum)
     BOOST_CHECK_EQUAL(one_b->nTaskSpacingSum, 2400);
 }
 
+BOOST_AUTO_TEST_CASE(solve_task_pow)
+{
+    const Consensus::Params params{MakeParams()};
+
+    CBlockHeader header;
+    header.nVersion = EncodeTaskId(VERSIONBITS_TOP_BITS, 0);
+    header.nBits = 0x207fffff;
+    header.nTime = 1723726478;
+    header.nNonce = 0;
+    BOOST_CHECK_EQUAL(SolveTaskProofOfWork(header, params), CheckTaskProofOfWork(header, params));
+    BOOST_CHECK(header.vTaskData.empty());
+
+    header.nVersion = EncodeTaskId(VERSIONBITS_TOP_BITS, 7);
+    header.vTaskData = {0xaa, 0xbb};
+    BOOST_CHECK(!SolveTaskProofOfWork(header, params));
+    BOOST_CHECK_EQUAL(header.vTaskData.size(), 2U);
+}
+
 BOOST_AUTO_TEST_CASE(validate_pow_tasks)
 {
     BOOST_CHECK_NO_THROW(ValidatePowTasks(MakeParams()));

@@ -34,6 +34,9 @@ static constexpr int NUM_GETBLOCKSTATS_PERCENTILES = 5;
  */
 double GetDifficulty(const CBlockIndex& blockindex);
 
+/** Difficulty for a compact target. */
+double GetDifficultyForBits(uint32_t nBits);
+
 /** Callback for when block tip changed. */
 void RPCNotifyBlockChange(const CBlockIndex*);
 

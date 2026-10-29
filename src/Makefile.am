@@ -258,6 +258,7 @@ BITCOIN_CORE_H = \
   pow.h \
   pow/schedule.h \
   pow/task_id.h \
+  pow/task_template.h \
   pow/tasks.h \
   protocol.h \
   psbt.h \
@@ -462,6 +463,7 @@ libbitcoin_node_a_SOURCES = \
   policy/settings.cpp \
   pow.cpp \
   pow/schedule.cpp \
+  pow/task_template.cpp \
   pow/tasks.cpp \
   rest.cpp \
   rpc/blockchain.cpp \

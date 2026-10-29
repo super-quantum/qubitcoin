@@ -10,6 +10,11 @@ Notable changes
   bits 20–27. Every other version, including those of all existing blocks, is task 0.
 - Blocks of tasks other than 0 carry task data in the header after `nNonce`, returned
   as `taskdata` by `getblockheader` and `getblock`. Task 0 headers are unchanged.
+  See [pow-tasks.md](pow-tasks.md).
+- `getblocktemplate` accepts an optional `task_id` in the template request (default 0)
+  and returns a `task` object describing the task.
+- `getmininginfo` and `getblockchaininfo` list each task's difficulty and activation;
+  `getdifficulty` and the `generate*` RPCs take an optional task id.
 - Each block's chain work is the geometric mean of the scheduled work of all active
   tasks. With only task 0 active, as on mainnet, chain work is unchanged.
 - Headers received during initial sync must have exactly the `nBits` the difficulty

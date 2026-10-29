@@ -83,6 +83,15 @@ bool CheckTaskProofOfWork(const CBlockHeader& header, const Consensus::Params& p
     }
 }
 
+bool SolveTaskProofOfWork(CBlockHeader& header, const Consensus::Params& params)
+{
+    const uint8_t task_id = DecodeTaskId(header.nVersion);
+    const auto* def = LookupTaskDefinition(params, task_id);
+    if (!def) return false;
+
+    return CheckTaskProofOfWork(header, params);
+}
+
 const CBlockIndex* FindPreviousTaskBlock(const CBlockIndex* start, const uint8_t task_id, const Consensus::Params& params)
 {
     if (!start) return nullptr;

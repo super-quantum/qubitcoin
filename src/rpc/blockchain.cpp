@@ -79,11 +79,11 @@ static CUpdatedBlock latestblock GUARDED_BY(cs_blockchange);
 
 /* Calculate the difficulty for a given block index.
  */
-double GetDifficulty(const CBlockIndex& blockindex)
+double GetDifficultyForBits(const uint32_t nBits)
 {
-    int nShift = (blockindex.nBits >> 24) & 0xff;
+    int nShift = (nBits >> 24) & 0xff;
     double dDiff =
-        (double)0x0000ffff / (double)(blockindex.nBits & 0x00ffffff);
+        (double)0x0000ffff / (double)(nBits & 0x00ffffff);
 
     while (nShift < 29)
     {
@@ -97,6 +97,11 @@ double GetDifficulty(const CBlockIndex& blockindex)
     }
 
     return dDiff;
+}
+
+double GetDifficulty(const CBlockIndex& blockindex)
+{
+    return GetDifficultyForBits(blockindex.nBits);
 }
 
 static int ComputeNextBlockAndDepth(const CBlockIndex& tip, const CBlockIndex& blockindex, const CBlockIndex*& next)
@@ -414,7 +419,7 @@ static RPCHelpMan getdifficulty()
     return RPCHelpMan{"getdifficulty",
                 "\nReturns the proof-of-work difficulty as a multiple of the minimum difficulty.\n",
                 {
-                    {"task_id", RPCArg::Type::NUM, RPCArg::Default{POW_DEFAULT_TASK_ID}, "The PoW task ID to mine (0-255). Defaults to the default task (qhash)."},
+                    {"task_id", RPCArg::Type::NUM, RPCArg::Default{POW_DEFAULT_TASK_ID}, "The PoW task ID (0-255). Defaults to the default task (qhash)."},
                 },
                 RPCResult{
                     RPCResult::Type::NUM, "", "the proof-of-work difficulty as a multiple of the minimum difficulty."},
@@ -433,8 +438,15 @@ static RPCHelpMan getdifficulty()
     }
     const auto task_id = static_cast<uint8_t>(task_id_int);
     
+    const auto* def{LookupTaskDefinition(chainman.GetConsensus(), task_id)};
+    if (!def) throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d does not exist", task_id_int));
+
     LOCK(cs_main);
-    return GetDifficulty(*CHECK_NONFATAL(FindPreviousTaskBlock(CHECK_NONFATAL(chainman.ActiveChain().Tip()), task_id, chainman.GetConsensus())));
+    const CBlockIndex* prev_task_block{FindPreviousTaskBlock(CHECK_NONFATAL(chainman.ActiveChain().Tip()), task_id, chainman.GetConsensus())};
+    if (prev_task_block) return GetDifficulty(*prev_task_block);
+
+    // No block has solved this task yet: report its anchor target.
+    return GetDifficultyForBits(def->nInitialBits);
 },
     };
 }
@@ -540,7 +552,6 @@ static RPCHelpMan getblockheader()
                             {RPCResult::Type::NUM, "height", "The block height or index"},
                             {RPCResult::Type::NUM, "version", "The block version"},
                             {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
-                    {RPCResult::Type::STR_HEX, "taskdata", /*optional=*/true, "Task-specific header data (only for blocks that do not use the default proof-of-work task)"},
                             {RPCResult::Type::STR_HEX, "taskdata", /*optional=*/true, "Task-specific header data (only for blocks that do not use the default proof-of-work task)"},
                             {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
                             {RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME},
@@ -707,6 +718,7 @@ static RPCHelpMan getblock()
                     {RPCResult::Type::NUM, "height", "The block height or index"},
                     {RPCResult::Type::NUM, "version", "The block version"},
                     {RPCResult::Type::STR_HEX, "versionHex", "The block version formatted in hexadecimal"},
+                    {RPCResult::Type::STR_HEX, "taskdata", /*optional=*/true, "Task-specific header data (only for blocks that do not use the default proof-of-work task)"},
                     {RPCResult::Type::STR_HEX, "merkleroot", "The merkle root"},
                     {RPCResult::Type::ARR, "tx", "The transaction ids",
                         {{RPCResult::Type::STR_HEX, "", "The transaction id"}}},
@@ -1343,7 +1355,9 @@ RPCHelpMan getblockchaininfo()
         UniValue task_info(UniValue::VOBJ);
         task_info.pushKV("id", (int)task_id);
         task_info.pushKV("name", taskDef.name);
-        task_info.pushKV("difficulty", GetDifficulty(*FindPreviousTaskBlock(&tip, task_id, consensusParams)));
+        const CBlockIndex* prev_task_block{FindPreviousTaskBlock(&tip, task_id, consensusParams)};
+        task_info.pushKV("difficulty", prev_task_block ? GetDifficulty(*prev_task_block)
+                                                       : GetDifficultyForBits(taskDef.nInitialBits));
         task_info.pushKV("active", IsTaskActive(consensusParams, task_id, next_height));
         task_info.pushKV("activation_height", taskDef.activation_height);
         if (taskDef.deactivation_height) {

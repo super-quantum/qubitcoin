@@ -84,6 +84,12 @@ std::optional<size_t> TaskSlot(const Consensus::Params& params, uint8_t task_id)
 /** Determine whether the provided header satisfies the PoW rules for its selected task. */
 bool CheckTaskProofOfWork(const CBlockHeader& header, const Consensus::Params& params);
 
+/**
+ * Run the task's solver for the header's current nonce, filling in vTaskData, and return
+ * whether the header now satisfies its task. For task 0 this is just the check.
+ */
+bool SolveTaskProofOfWork(CBlockHeader& header, const Consensus::Params& params);
+
 /** Locate the previous block in the same chain that solved the specified task. */
 const CBlockIndex* FindPreviousTaskBlock(const CBlockIndex* start, uint8_t task_id, const Consensus::Params& params);
 

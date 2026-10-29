@@ -23,6 +23,7 @@
 #include <node/miner.h>
 #include <node/warnings.h>
 #include <pow.h>
+#include <pow/task_template.h>
 #include <pow/tasks.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
@@ -135,7 +136,7 @@ static bool GenerateBlock(ChainstateManager& chainman, Mining& miner, CBlock& bl
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
-    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckTaskProofOfWork(block, chainman.GetConsensus()) && !chainman.m_interrupt) {
+    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !SolveTaskProofOfWork(block, chainman.GetConsensus()) && !chainman.m_interrupt) {
         ++block.nNonce;
         --max_tries;
     }
@@ -520,7 +521,7 @@ static RPCHelpMan getmininginfo()
     obj.pushKV("blocks",           active_chain.Height());
     if (BlockAssembler::m_last_block_weight) obj.pushKV("currentblockweight", *BlockAssembler::m_last_block_weight);
     if (BlockAssembler::m_last_block_num_txs) obj.pushKV("currentblocktx", *BlockAssembler::m_last_block_num_txs);
-    obj.pushKV("difficulty", GetDifficulty(*tip));
+    obj.pushKV("difficulty", GetDifficulty(*CHECK_NONFATAL(FindPreviousTaskBlock(tip, POW_DEFAULT_TASK_ID, consensusParams))));
     
     obj.pushKV("networkhashps",    getnetworkhashps().HandleRequest(request));
     obj.pushKV("pooledtx",         (uint64_t)mempool.size());
@@ -531,7 +532,9 @@ static RPCHelpMan getmininginfo()
         UniValue task_info(UniValue::VOBJ);
         task_info.pushKV("id", (int)task_id);
         task_info.pushKV("name", taskDef.name);
-        task_info.pushKV("difficulty", GetDifficulty(*FindPreviousTaskBlock(tip, task_id, consensusParams)));
+        const CBlockIndex* prev_task_block{FindPreviousTaskBlock(tip, task_id, consensusParams)};
+        task_info.pushKV("difficulty", prev_task_block ? GetDifficulty(*prev_task_block)
+                                                       : GetDifficultyForBits(taskDef.nInitialBits));
         task_info.pushKV("active", IsTaskActive(consensusParams, task_id, next_height));
         task_info.pushKV("activation_height", taskDef.activation_height);
         if (taskDef.deactivation_height) {
@@ -663,7 +666,10 @@ static RPCHelpMan getblocktemplate()
         "    https://github.com/bitcoin/bips/blob/master/bip-0022.mediawiki\n"
         "    https://github.com/bitcoin/bips/blob/master/bip-0023.mediawiki\n"
         "    https://github.com/bitcoin/bips/blob/master/bip-0009.mediawiki#getblocktemplate_changes\n"
-        "    https://github.com/bitcoin/bips/blob/master/bip-0145.mediawiki\n",
+        "    https://github.com/bitcoin/bips/blob/master/bip-0145.mediawiki\n"
+        "\n"
+        "For a task other than 0 the header carries the task data after nNonce, serialized\n"
+        "with a CompactSize length prefix.\n",
         {
             {"template_request", RPCArg::Type::OBJ, RPCArg::Optional::NO, "Format of the template",
             {
@@ -740,6 +746,13 @@ static RPCHelpMan getblocktemplate()
                 {RPCResult::Type::NUM, "height", "The height of the next block"},
                 {RPCResult::Type::NUM, "task_id", "The PoW task ID for this block template"},
                 {RPCResult::Type::STR, "task_name", "The name of the PoW task"},
+                {RPCResult::Type::OBJ, "task", "What a miner needs to solve this task", {
+                    {RPCResult::Type::NUM, "id", "The PoW task ID"},
+                    {RPCResult::Type::STR, "name", "The name of the PoW task"},
+                    {RPCResult::Type::NUM, "data_bytes", "Exact length of the witness this task expects in the header, 0 if it carries none"},
+                    {RPCResult::Type::BOOL, "unsupported", /*optional=*/true, "Present and true if this node cannot describe the task, which makes it unminable from outside"},
+                    {RPCResult::Type::OBJ_DYN, "<name>", /*optional=*/true, "Task-specific sizing, named after the task", {{RPCResult::Type::ELISION, "", ""}}},
+                }, /*skip_type_check=*/true},
                 {RPCResult::Type::STR_HEX, "signet_challenge", /*optional=*/true, "Only on signet"},
                 {RPCResult::Type::STR_HEX, "default_witness_commitment", /*optional=*/true, "a valid witness commitment for the unmodified block template"},
             }},
@@ -778,22 +791,12 @@ static RPCHelpMan getblocktemplate()
         lpval = oparam.find_value("longpollid");
 
         const UniValue& taskval = oparam.find_value("task_id");
-        
-        const int task_id_int = taskval.getInt<int>();
-        if (task_id_int < 0 || task_id_int > 255) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "task_id must be between 0 and 255");
-        }
-        task_id = static_cast<uint8_t>(task_id_int);
-
-        // Validate that the task exists and is active at next height
-        const int next_height = chainman.ActiveChain().Height() + 1;
-        if (!IsTaskActive(consensusParams, task_id, next_height)) {
-            const auto* taskDef = LookupTaskDefinition(consensusParams, task_id);
-            if (!taskDef) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d does not exist", task_id));
-            } else {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d (%s) is not active at height %d", task_id, taskDef->name, next_height));
+        if (!taskval.isNull()) {
+            const int task_id_int = taskval.getInt<int>();
+            if (task_id_int < 0 || task_id_int > 255) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "task_id must be between 0 and 255");
             }
+            task_id = static_cast<uint8_t>(task_id_int);
         }
 
         if (strMode == "proposal")
@@ -901,6 +904,17 @@ static RPCHelpMan getblocktemplate()
         // TODO: Maybe recheck connections/IBD and (if something wrong) send an expires-immediately template to stop miners?
     }
 
+    // Validate that the task exists and is active at next height
+    const int next_height = chainman.ActiveChain().Height() + 1;
+    if (!IsTaskActive(consensusParams, task_id, next_height)) {
+        const auto* taskDef = LookupTaskDefinition(consensusParams, task_id);
+        if (!taskDef) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d does not exist", task_id));
+        } else {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("Task ID %d (%s) is not active at height %d", task_id, taskDef->name, next_height));
+        }
+    }
+
     // GBT must be called with 'signet' set in the rules for signet chains
     if (consensusParams.signet_blocks && setClientRules.count("signet") != 1) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "getblocktemplate must be called with the signet rule set (call with {\"rules\": [\"segwit\", \"signet\"]})");
@@ -997,6 +1011,9 @@ static RPCHelpMan getblocktemplate()
     aMutable.push_back("time");
     aMutable.push_back("transactions");
     aMutable.push_back("prevblock");
+    if (task_id != POW_DEFAULT_TASK_ID) {
+        aMutable.push_back("taskdata");
+    }
 
     UniValue result(UniValue::VOBJ);
     result.pushKV("capabilities", std::move(aCaps));
@@ -1084,6 +1101,7 @@ static RPCHelpMan getblocktemplate()
     result.pushKV("task_id", (int)task_id);
     const auto* taskDef = LookupTaskDefinition(consensusParams, task_id);
     result.pushKV("task_name", taskDef->name);
+    result.pushKV("task", TaskTemplateFields(consensusParams, task_id, pblock->nBits));
 
     if (consensusParams.signet_blocks) {
         result.pushKV("signet_challenge", HexStr(consensusParams.signet_challenge));
