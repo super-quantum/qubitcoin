@@ -412,6 +412,9 @@ dnl unknown options if any other warning is produced. Test the -Wfoo case, and
 dnl set the -Wno-foo case if it works.
 AX_CHECK_COMPILE_FLAG([-Wunused-parameter], [NOWARN_CXXFLAGS="$NOWARN_CXXFLAGS -Wno-unused-parameter"], [], [$CXXFLAG_WERROR])
 
+dnl GCC reports a false positive -Wstringop-overflow in Boost.MultiIndex (CTxMemPool).
+AX_CHECK_COMPILE_FLAG([-Wstringop-overflow], [NOWARN_CXXFLAGS="$NOWARN_CXXFLAGS -Wno-error=stringop-overflow"], [], [$CXXFLAG_WERROR])
+
 dnl Don't allow extended (non-ASCII) symbols in identifiers. This is easier for code review.
 AX_CHECK_COMPILE_FLAG([-fno-extended-identifiers], [CORE_CXXFLAGS="$CORE_CXXFLAGS -fno-extended-identifiers"], [], [$CXXFLAG_WERROR])
 

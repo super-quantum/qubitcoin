@@ -42,7 +42,7 @@ leveldb_libleveldb_la_CPPFLAGS = $(AM_CPPFLAGS) $(LEVELDB_CPPFLAGS_INT) $(LEVELD
 # static version of this library. We don't need a dynamic version, and a dynamic
 # version can't be used on windows anyway because the library doesn't currently
 # export DLL symbols.
-leveldb_libleveldb_la_CXXFLAGS = $(filter-out -Wconditional-uninitialized -Werror=conditional-uninitialized -Wsuggest-override -Werror=suggest-override, $(AM_CXXFLAGS)) $(PIE_FLAGS) -static
+leveldb_libleveldb_la_CXXFLAGS = $(filter-out -Wconditional-uninitialized -Werror=conditional-uninitialized -Wsuggest-override -Werror=suggest-override, $(AM_CXXFLAGS)) $(PIE_FLAGS) -static -Wno-error=maybe-uninitialized
 leveldb_libleveldb_la_LDFLAGS = $(AM_LDFLAGS) -static
 
 leveldb_libleveldb_la_SOURCES=
