@@ -20,6 +20,8 @@ from math import comb
 # Must track DEQODE_K_MIN / DEQODE_K_MAX in src/pow/tasks/deqode.h.
 K_MIN = 4
 K_MAX = 92
+# Must track MAX_DEQODE_QUBITS in src/pow/tasks/deqode.h.
+MAX_QUBITS = 1024
 
 
 def to_compact(value):
@@ -75,8 +77,18 @@ def main():
                         help="the expected witnesses per block that anchor should imply")
     args = parser.parse_args()
 
+    if not 1 < args.n <= MAX_QUBITS:
+        parser.error(f"need 1 < n <= {MAX_QUBITS}")
+    if not 0 < args.r <= args.n:
+        parser.error("need 0 < r <= n")
+    if args.gate_multiplier <= 0:
+        parser.error("--gate-multiplier must be positive")
     if not 0 <= args.w_min <= args.w_max <= args.n:
         parser.error("need 0 <= w_min <= w_max <= n")
+    if args.anchor_k is not None and args.anchor_w is None:
+        parser.error("--anchor-k requires --anchor-w")
+    if args.anchor_w is not None and not args.w_min <= args.anchor_w <= args.w_max:
+        parser.error("--anchor-w is outside the tabulated range")
 
     weights = list(range(args.w_min, args.w_max + 1))
     costs = [prange_cost(args.r, w) for w in weights]
@@ -91,15 +103,8 @@ def main():
             parser.error(f"step into w={weights[i]} is wider than the difficulty band: "
                          f"{decoded[i - 1]} / {decoded[i]} > {K_MAX // K_MIN}")
 
-    print(f"                    // contrib/devtools/deqode-hardness.py --n {args.n} --r {args.r} --w-min {args.w_min} --w-max {args.w_max}")
-    print("                    .hardness = {")
-    for w, enc in zip(weights, encoded):
-        print(f"                        0x{enc:08x}, // w = {w}")
-    print("                    },")
-
+    anchor = None
     if args.anchor_w is not None:
-        if args.anchor_w not in weights:
-            parser.error("--anchor-w is outside the tabulated range")
         i = weights.index(args.anchor_w)
         k = args.anchor_k if args.anchor_k is not None else K_MIN
         # w is chosen when K_MIN * C[w] <= difficulty < K_MIN * C[w - 1].
@@ -111,8 +116,18 @@ def main():
                          f"in [{low}, {high if high is not None else 'inf'})")
         bits = bits_for_difficulty(want)
         got = difficulty_for_bits(bits)
+        anchor = bits, got, got // decoded[i]
+
+    print(f"                    // contrib/devtools/deqode-hardness.py --n {args.n} --r {args.r} --w-min {args.w_min} --w-max {args.w_max}")
+    print("                    .hardness = {")
+    for w, enc in zip(weights, encoded):
+        print(f"                        0x{enc:08x}, // w = {w}")
+    print("                    },")
+
+    if anchor is not None:
+        bits, got, k = anchor
         print()
-        print(f"                .nInitialBits = 0x{bits:08x}, // difficulty {got}: w = {args.anchor_w}, K = {got // decoded[i]}")
+        print(f"                .nInitialBits = 0x{bits:08x}, // difficulty {got}: w = {args.anchor_w}, K = {k}")
 
 
 if __name__ == "__main__":
