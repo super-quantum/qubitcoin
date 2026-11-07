@@ -20,6 +20,7 @@ TEST_FRAMEWORK_MODULES = [
     "blocktools",
     "crypto.chacha20",
     "crypto.ellswift",
+    "deqode_test",
     "key",
     "messages",
     "crypto.muhash",
