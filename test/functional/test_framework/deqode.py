@@ -158,6 +158,8 @@ def solve(col_x, col_z, target_syndrome, n, w, rng, max_iterations=20000):
     # Column q is an X on qubit q, column n + q a Z.
     generators = list(col_z) + list(col_x)
     order = list(range(2 * n))
+    # All columns lie within this many binary coordinates.
+    rank_bound = max(generators, default=0).bit_length()
 
     for _ in range(max_iterations):
         rng.shuffle(order)
@@ -173,6 +175,9 @@ def solve(col_x, col_z, target_syndrome, n, w, rng, max_iterations=20000):
                 mask ^= pivots[top][1]
             if column:
                 pivots[column.bit_length() - 1] = (column, mask)
+                # A full basis leaves only dependent columns, which cannot change pivots.
+                if len(pivots) == rank_bound:
+                    break
 
         residue = target_syndrome
         solution = 0
